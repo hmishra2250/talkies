@@ -7,6 +7,7 @@ import signal
 import socket
 import subprocess
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +23,9 @@ from .transcriber import Transcriber
 
 LOG = logging.getLogger(__name__)
 VALID_MODES = {"dictation", "note", "meeting"}
+TOGGLE_DEBOUNCE_SECONDS = 0.75
+_NOTIFICATION_ID: str | None = None
+_NOTIFICATION_LOCK = threading.Lock()
 
 
 def socket_path() -> Path:
@@ -29,13 +33,28 @@ def socket_path() -> Path:
 
 
 def notify(summary: str, body: str = "", *, urgency: str = "normal") -> None:
-    command = ["notify-send", "--app-name=Talkies", f"--urgency={urgency}", summary]
-    if body:
-        command.append(body)
-    try:
-        subprocess.run(command, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except FileNotFoundError:
-        LOG.info("%s: %s", summary, body)
+    global _NOTIFICATION_ID
+    with _NOTIFICATION_LOCK:
+        command = [
+            "notify-send",
+            "--app-name=Talkies",
+            f"--urgency={urgency}",
+            "--transient",
+            f"--expire-time={5000 if urgency == 'critical' else 2200}",
+            "--print-id",
+        ]
+        if _NOTIFICATION_ID:
+            command.append(f"--replace-id={_NOTIFICATION_ID}")
+        command.append(summary)
+        if body:
+            command.append(body)
+        try:
+            result = subprocess.run(command, check=False, capture_output=True, text=True)
+            notification_id = result.stdout.strip()
+            if result.returncode == 0 and notification_id.isdigit():
+                _NOTIFICATION_ID = notification_id
+        except FileNotFoundError:
+            LOG.info("%s: %s", summary, body)
 
 
 @dataclass(slots=True)
@@ -58,6 +77,7 @@ class TalkiesService:
         self.store = TranscriptStore()
         self.active: ActiveRecording | None = None
         self._operation_lock = threading.Lock()
+        self._last_toggle_request = float("-inf")
 
     def warm_model(self) -> None:
         try:
@@ -106,7 +126,14 @@ class TalkiesService:
             if active.mode == "dictation" and self.config.behavior.paste
             else None
         )
-        path = self.recorder.stop()
+        try:
+            path = self.recorder.stop()
+        except Exception:
+            if getattr(self.recorder, "process", None) is None:
+                self.active = None
+                if active.path.exists() and active.path.stat().st_size <= 44:
+                    active.path.unlink()
+            raise
         self.active = None
         notify("Transcribing locally…", self.config.transcription.model, urgency="low")
         try:
@@ -175,6 +202,16 @@ class TalkiesService:
         command = request.get("command")
         if command == "status":
             return self.status()
+        if command == "toggle":
+            try:
+                request_time = float(request.get("request_time", time.monotonic()))
+            except (TypeError, ValueError):
+                request_time = time.monotonic()
+            if request_time <= self._last_toggle_request + TOGGLE_DEBOUNCE_SECONDS:
+                self._last_toggle_request = max(self._last_toggle_request, request_time)
+                LOG.info("Ignored repeated toggle request")
+                return {**self.status(), "ignored": True}
+            self._last_toggle_request = request_time
         if not self._operation_lock.acquire(blocking=False):
             return {"ok": False, "error": "Talkies is busy"}
         try:
@@ -216,7 +253,8 @@ class Daemon:
         self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.server.bind(str(path))
         os.chmod(path, 0o600)
-        self.server.listen(8)
+        # Key-repeat can launch several shortcut clients before debounce handles them.
+        self.server.listen(64)
         self.server.settimeout(1)
         threading.Thread(target=self.service.warm_model, daemon=True).start()
         LOG.info("Talkies listening at %s", path)

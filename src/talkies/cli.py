@@ -39,6 +39,7 @@ def _start_daemon() -> None:
 
 
 def send_request(request: dict[str, Any], *, autostart: bool = True) -> dict[str, Any]:
+    request = {**request, "request_time": time.monotonic()}
     path = socket_path()
     if not path.exists() and autostart:
         _start_daemon()

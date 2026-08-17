@@ -40,7 +40,8 @@ This creates an isolated `uv` tool environment, a systemd **user** service, the 
 and a GNOME global shortcut. It does not use `sudo`.
 
 The shortcut intentionally avoids **Super+Shift+Space**, which GNOME reserves for switching to
-the previous keyboard input source.
+the previous keyboard input source. Shortcut auto-repeat is debounced, and Talkies reuses one
+transient desktop notification instead of stacking one notification per event.
 
 `small.en` is already cached on the target laptop. Talkies runs inference in explicit offline mode,
 so the daemon does not perform hidden update checks. To opt into downloading a different model,
