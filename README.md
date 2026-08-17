@@ -27,25 +27,33 @@ This is an initial personal build, not a claim of complete feature parity with W
 Wispr-style contextual rewriting and true partial streaming are explicit next steps. The local
 Whisper model determines most raw recognition quality.
 
-## Install on this laptop
+## One-command installation
 
-Prerequisites already present on the target Ubuntu installation: `uv`, `ffmpeg`, `pactl`, `xclip`,
-and `xdotool`.
+On Ubuntu or Debian, clone the repository and run the installer:
 
 ```bash
-./scripts/install.sh
+git clone git@github.com:hmishra2250/talkies.git && cd talkies && ./install.sh
 ```
 
-This creates an isolated `uv` tool environment, a systemd **user** service, the default config,
-and a GNOME global shortcut. It does not use `sudo`.
+For an existing checkout, simply run `./install.sh`. The installer:
+
+1. Installs missing Ubuntu/Debian audio and X11 packages using `apt` when necessary.
+2. Installs `uv` when it is missing.
+3. Creates an isolated Talkies tool environment.
+4. Downloads the configured speech model once.
+5. Installs and starts a systemd **user** service.
+6. Registers the GNOME global shortcut and runs diagnostics.
+
+System packages may require your `sudo` password. The Talkies service itself runs entirely as your
+normal user.
 
 The shortcut intentionally avoids **Super+Shift+Space**, which GNOME reserves for switching to
 the previous keyboard input source. Shortcut auto-repeat is debounced, and Talkies reuses one
 transient desktop notification instead of stacking one notification per event.
 
-`small.en` is already cached on the target laptop. Talkies runs inference in explicit offline mode,
-so the daemon does not perform hidden update checks. To opt into downloading a different model,
-run `talkies download-model MODEL` once and then change the config.
+Talkies runs inference in explicit offline mode, so the daemon does not perform hidden update
+checks. The installer prepares `small.en`; to use a different model, run
+`talkies download-model MODEL` once and then change the config.
 
 ## Use
 

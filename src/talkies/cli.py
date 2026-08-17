@@ -159,8 +159,12 @@ def main(argv: list[str] | None = None) -> int:
         from faster_whisper.utils import download_model
 
         model = args.model or load_config().transcription.model
-        print(f"Downloading {model} for offline use…")
-        path = download_model(model)
+        try:
+            path = download_model(model, local_files_only=True)
+            print(f"Already available offline: {model}")
+        except Exception:
+            print(f"Downloading {model} for offline use…")
+            path = download_model(model)
         print(f"Ready: {path}")
         return 0
     if args.command == "history":
