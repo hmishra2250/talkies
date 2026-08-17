@@ -7,8 +7,8 @@ focused application without sending speech to a cloud service.
 
 The first working use case is a two-press global dictation shortcut:
 
-1. Press **Super+Shift+Space** and speak.
-2. Press **Super+Shift+Space** again.
+1. Press **Ctrl+Super+Space** and speak.
+2. Press **Ctrl+Super+Space** again.
 3. Talkies transcribes locally and pastes into the window that has focus.
 
 It also records voice notes and meetings, including the default speaker/meeting audio.
@@ -38,6 +38,9 @@ and `xdotool`.
 
 This creates an isolated `uv` tool environment, a systemd **user** service, the default config,
 and a GNOME global shortcut. It does not use `sudo`.
+
+The shortcut intentionally avoids **Super+Shift+Space**, which GNOME reserves for switching to
+the previous keyboard input source.
 
 `small.en` is already cached on the target laptop. Talkies runs inference in explicit offline mode,
 so the daemon does not perform hidden update checks. To opt into downloading a different model,

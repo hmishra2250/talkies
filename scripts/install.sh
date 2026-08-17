@@ -11,7 +11,7 @@ for command in uv ffmpeg pactl xclip xdotool xprop systemctl gsettings notify-se
 done
 
 uv tool install --force --reinstall-package talkies-local .
-"${HOME}/.local/bin/talkies" install --hotkey "${TALKIES_HOTKEY:-<Super><Shift>space}"
+"${HOME}/.local/bin/talkies" install --hotkey "${TALKIES_HOTKEY:-<Control><Super>space}"
 "${HOME}/.local/bin/talkies" doctor
 
-printf '\nTalkies is ready. Press Super+Shift+Space to start, speak, then press it again.\n'
+printf '\nTalkies is ready. Press Ctrl+Super+Space to start, speak, then press it again.\n'

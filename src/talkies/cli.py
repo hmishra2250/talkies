@@ -127,7 +127,7 @@ def build_parser() -> argparse.ArgumentParser:
     install_parser = subparsers.add_parser(
         "install", help="install the user service and GNOME hotkey"
     )
-    install_parser.add_argument("--hotkey", default="<Super><Shift>space")
+    install_parser.add_argument("--hotkey", default="<Control><Super>space")
     download = subparsers.add_parser(
         "download-model", help="explicitly download a speech model for offline use"
     )
