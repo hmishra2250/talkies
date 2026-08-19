@@ -46,6 +46,7 @@ class TranscriptionConfig:
     vad_filter: bool = True
     initial_prompt: str = ""
     offline: bool = True
+    model_idle_timeout_seconds: int = 60
 
 
 @dataclass(slots=True)
@@ -85,6 +86,9 @@ beam_size = 5
 vad_filter = true
 initial_prompt = ""
 offline = true
+# Release all model, CUDA, and VAD memory after this many idle seconds.
+# Set to 0 to keep the model warm indefinitely.
+model_idle_timeout_seconds = 60
 
 [behavior]
 paste = true

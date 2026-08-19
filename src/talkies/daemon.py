@@ -6,6 +6,7 @@ import os
 import signal
 import socket
 import subprocess
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -78,14 +79,33 @@ class TalkiesService:
         self.active: ActiveRecording | None = None
         self._operation_lock = threading.Lock()
         self._last_toggle_request = float("-inf")
+        self._last_model_activity = time.monotonic()
+        self._warming_thread: threading.Thread | None = None
 
     def warm_model(self) -> None:
         try:
             self.transcriber.load()
+            self._last_model_activity = time.monotonic()
             LOG.info("Loaded %s on %s", self.config.transcription.model, self.transcriber.backend)
         except Exception as exc:
             LOG.exception("Model warm-up failed")
             notify("Talkies model error", str(exc), urgency="critical")
+
+    def warm_model_in_background(self) -> None:
+        if self.transcriber.loaded:
+            self._last_model_activity = time.monotonic()
+            return
+        if self._warming_thread and self._warming_thread.is_alive():
+            return
+        self._warming_thread = threading.Thread(target=self.warm_model, daemon=True)
+        self._warming_thread.start()
+
+    def should_recycle_model(self, now: float | None = None) -> bool:
+        timeout = self.config.transcription.model_idle_timeout_seconds
+        if timeout <= 0 or self.active or not self.transcriber.loaded:
+            return False
+        current_time = now if now is not None else time.monotonic()
+        return current_time - self._last_model_activity >= timeout
 
     def status(self) -> dict[str, Any]:
         active = self.active
@@ -109,6 +129,8 @@ class TalkiesService:
         destination = data_dir() / "recordings" / f"{stamp}-{mode}.wav"
         self.recorder.start(destination, include_system_audio=mode == "meeting")
         self.active = ActiveRecording(mode=mode, started_at=started_at, path=destination)
+        self._last_model_activity = time.monotonic()
+        self.warm_model_in_background()
         labels = {
             "dictation": ("Listening…", "Use the hotkey again to paste"),
             "note": ("Recording voice note…", "Run “talkies note” again to save"),
@@ -142,6 +164,8 @@ class TalkiesService:
             message = f"{exc}. Raw audio was kept at {path}"
             notify("Transcription failed; audio kept", str(path), urgency="critical")
             raise RuntimeError(message) from exc
+        finally:
+            self._last_model_activity = time.monotonic()
         text = normalize_text(
             raw_text,
             replacements=self.config.replacements,
@@ -256,10 +280,14 @@ class Daemon:
         # Key-repeat can launch several shortcut clients before debounce handles them.
         self.server.listen(64)
         self.server.settimeout(1)
-        threading.Thread(target=self.service.warm_model, daemon=True).start()
         LOG.info("Talkies listening at %s", path)
         try:
             while self.running:
+                if self.service.should_recycle_model():
+                    LOG.info("Recycling idle daemon to release speech model memory")
+                    self.server.close()
+                    path.unlink(missing_ok=True)
+                    os.execv(sys.executable, [sys.executable, "-m", "talkies", "daemon"])
                 try:
                     connection, _ = self.server.accept()
                 except TimeoutError:

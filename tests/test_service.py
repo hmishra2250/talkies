@@ -1,4 +1,5 @@
 from pathlib import Path
+from threading import Event
 
 from talkies.audio import AudioError
 from talkies.config import Config
@@ -32,6 +33,16 @@ class FakeTranscriber:
 class FailingTranscriber(FakeTranscriber):
     def transcribe(self, _path: Path):
         raise RuntimeError("model failed")
+
+
+class ColdTranscriber(FakeTranscriber):
+    def __init__(self) -> None:
+        self.loaded = False
+        self.did_load = Event()
+
+    def load(self) -> None:
+        self.loaded = True
+        self.did_load.set()
 
 
 class EmptyRecorder(FakeRecorder):
@@ -87,6 +98,25 @@ def test_key_repeat_does_not_toggle_recording(tmp_path: Path, monkeypatch) -> No
     assert started["state"] == "recording"
     assert repeated["state"] == "recording"
     assert repeated["ignored"] is True
+
+
+def test_recording_start_warms_cold_model_in_background(tmp_path: Path, monkeypatch) -> None:
+    instance = service(tmp_path, monkeypatch)
+    cold = ColdTranscriber()
+    instance.transcriber = cold
+    instance.handle({"command": "start", "mode": "dictation"})
+    assert cold.did_load.wait(timeout=1)
+    assert cold.loaded is True
+
+
+def test_loaded_model_recycles_only_after_idle_timeout(tmp_path: Path, monkeypatch) -> None:
+    instance = service(tmp_path, monkeypatch)
+    instance.config.transcription.model_idle_timeout_seconds = 60
+    instance._last_model_activity = 100
+    assert instance.should_recycle_model(now=159.9) is False
+    assert instance.should_recycle_model(now=160) is True
+    instance.handle({"command": "start", "mode": "dictation"})
+    assert instance.should_recycle_model(now=1000) is False
 
 
 def test_meeting_uses_system_audio_and_writes_note(tmp_path: Path, monkeypatch) -> None:

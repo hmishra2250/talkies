@@ -16,7 +16,8 @@ It also records voice notes and meetings, including the default speaker/meeting 
 ## Why this shape
 
 - **Local-first:** recordings, models, history, and notes stay under your home directory.
-- **Fast after warm-up:** a background daemon keeps the Whisper model loaded.
+- **Fast without permanent model residency:** model warm-up overlaps recording, then an idle recycle
+  returns native CPU and GPU memory.
 - **Works across X11 apps:** clipboard transfer plus `xdotool` avoids app-specific plugins and
   selects the terminal paste shortcut for common terminal windows.
 - **Recoverable:** every transcript is stored in a local SQLite history before temporary audio is
@@ -90,6 +91,14 @@ Recommended models for the RTX 4070 Laptop GPU:
 
 Set names and product vocabulary in `[replacements]`. Say “new line” or “new paragraph” to
 control layout. Set `behavior.paste = false` for clipboard-only operation.
+
+### Memory behavior
+
+The control daemon starts without loading Whisper. The model begins warming in the background when
+recording starts, so normal speaking time hides most or all of the cold-load cost. After 60 seconds
+without a recording, Talkies recycles its daemon process to return the model, CUDA context, and VAD
+runtime memory to the operating system. Change `transcription.model_idle_timeout_seconds` to tune
+this tradeoff; use `0` to keep the model warm indefinitely.
 
 ## Privacy and files
 

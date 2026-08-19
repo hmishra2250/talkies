@@ -10,10 +10,12 @@ GNOME hotkey → talkies CLI → Unix socket → resident daemon
                                           └─ xclip + xdotool injection
 ```
 
-The CLI stays cheap enough for a global shortcut. The daemon owns recording state and keeps the
-model warm, avoiding model startup on every dictation. The Unix socket is mode `0600` under
-`$XDG_RUNTIME_DIR`. Model resolution uses `local_files_only`, so normal daemon startup never
-contacts the model host.
+The CLI stays cheap enough for a global shortcut. The daemon owns recording state and begins model
+warm-up when recording starts, overlapping startup with the user's speech. After a configurable
+idle grace period, it replaces its own process to fully release model, CUDA, and ONNX/VAD memory;
+ordinary Python garbage collection cannot return all of those native allocations. The Unix socket
+is mode `0600` under `$XDG_RUNTIME_DIR`. Model resolution uses `local_files_only`, so normal daemon
+startup never contacts the model host.
 
 ## Modes
 
