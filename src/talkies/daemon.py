@@ -144,7 +144,7 @@ class TalkiesService:
             raise RuntimeError("Nothing is being recorded")
         active = self.active
         target_window_id = (
-            (self.injector.capture_target() or "")
+            self.injector.capture_target()
             if active.mode == "dictation" and self.config.behavior.paste
             else None
         )
@@ -197,6 +197,7 @@ class TalkiesService:
                 )
             except InjectionError as exc:
                 injection_error = str(exc)
+                LOG.warning("Injection failed: %s", injection_error)
                 notify("Dictation not pasted", injection_error, urgency="critical")
         if not keep_audio:
             path.unlink(missing_ok=True)

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import shutil
 import subprocess
 import time
 from dataclasses import dataclass
+
+LOG = logging.getLogger(__name__)
 
 
 class InjectionError(RuntimeError):
@@ -103,10 +106,15 @@ class TextInjector:
                 target = target_window_id if target_window_id is not None else active_window_id()
                 if not target:
                     raise InjectionError("Could not identify the target window")
-                if active_window_id() != target:
-                    raise InjectionError(
-                        "Focus changed during transcription; text was kept in Talkies history"
+                current = active_window_id()
+                if current != target:
+                    LOG.warning(
+                        "Focus changed during transcription; pasting into the new active "
+                        "window instead"
                     )
+                    target = current
+                    if not target:
+                        raise InjectionError("Could not identify the target window")
                 result = _run(
                     [
                         "xdotool",
