@@ -182,14 +182,25 @@ def _benchmark_model_isolated(
         args=(model_name, pairs, options, result_queue),
     )
     process.start()
-    process.join()
-    try:
-        result = result_queue.get_nowait()
-    except queue.Empty:
+    deadline = time.monotonic() + 900
+    result = None
+    while time.monotonic() < deadline:
+        try:
+            result = result_queue.get(timeout=0.5)
+            break
+        except queue.Empty:
+            if not process.is_alive():
+                break
+    process.join(timeout=2)
+    if process.is_alive():
+        process.terminate()
+        process.join(timeout=2)
+    result_queue.close()
+    if result is None:
         result = {
             "status": "failed",
             "model": model_name,
-            "error": f"Benchmark worker exited with status {process.exitcode}",
+            "error": f"Benchmark worker exited or timed out with status {process.exitcode}",
             "cases": [],
         }
     if result.get("status") == "ok":

@@ -229,7 +229,7 @@ def main(argv: list[str] | None = None) -> int:
             print(args.output)
         else:
             print(benchmark_to_json(report), end="")
-        return 0
+        return 0 if all(item["status"] == "ok" for item in report["models"]) else 1
     if args.command == "export-benchmark":
         pairs = TranscriptStore().corrected_pairs()
         args.output.parent.mkdir(parents=True, exist_ok=True)
