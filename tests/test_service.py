@@ -67,6 +67,25 @@ class FakeInjector:
         self.target = target_window_id
 
 
+class FakeHotkeys:
+    running = True
+
+    def __init__(self) -> None:
+        self.hold_key = "Control_R"
+
+    def recommendation(self) -> str:
+        return "Hyper_L"
+
+    def begin_capture(self) -> dict[str, str]:
+        return {"state": "waiting"}
+
+    def capture_status(self) -> dict[str, str]:
+        return {"state": "captured", "binding": "Hyper_L"}
+
+    def set_hold_key(self, binding: str) -> None:
+        self.hold_key = binding
+
+
 def service(tmp_path: Path, monkeypatch) -> TalkiesService:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -129,6 +148,22 @@ def test_dictionary_updates_persist_and_apply_to_dictation(tmp_path: Path, monke
     instance.handle({"command": "start", "mode": "dictation"})
     finished = instance.handle({"command": "stop"})
     assert finished["text"] == "Howdy\nworld"
+
+
+def test_hotkey_capture_and_save_apply_live_and_persist(tmp_path: Path, monkeypatch) -> None:
+    instance = service(tmp_path, monkeypatch)
+    listener = FakeHotkeys()
+    instance.hotkeys = listener
+    assert instance.hotkey_info()["recommendation"] == "Hyper_L"
+    assert instance.start_hotkey_capture() == {"state": "waiting"}
+    assert instance.hotkey_capture_status()["binding"] == "Hyper_L"
+    instance.set_hotkey("Super_L + Shift_L + F23")
+    assert listener.hold_key == "Super_L+Shift_L+F23"
+    assert instance.config.behavior.hold_key == listener.hold_key
+    assert (tmp_path / "config/talkies/config.toml").exists()
+    assert 'hold_key = "Super_L+Shift_L+F23"' in (
+        tmp_path / "config/talkies/config.toml"
+    ).read_text()
 
 
 def test_key_repeat_does_not_toggle_recording(tmp_path: Path, monkeypatch) -> None:

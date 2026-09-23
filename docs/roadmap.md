@@ -7,9 +7,10 @@ must be measured on real devices before becoming defaults.
 
 ## Linux release: acceptance checks
 
-- Right Ctrl hold/release records and pastes. A quick double press locks recording; a later press
-  finishes it. The existing Ctrl+Super+Space toggle remains available as a fallback. Escape is
-  never captured. Unsupported desktops fall back to the toggle shortcut.
+- The configured key holds to record and releases to paste. A quick double press locks recording;
+  a later press finishes it. The dashboard captures and changes the key, including a Copilot key
+  when X11 exposes it as a key or chord. The existing Ctrl+Super+Space toggle remains available
+  as a fallback. Escape is never captured. Unsupported desktops use the toggle shortcut.
 - Cancel prevents pasting but transcribes and records the item. Undo restores a cancelled item.
   Empty and failed recordings remain visible when there is recoverable audio.
 - Local history can be searched and corrected. It shows status, duration and the audio when saved.

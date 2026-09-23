@@ -175,3 +175,35 @@ def save_replacements(replacements: dict[str, str], path: Path | None = None) ->
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def save_hold_key(binding: str, path: Path | None = None) -> None:
+    """Persist the selected X11 binding without rewriting unrelated TOML settings."""
+    path = path or config_dir() / "config.toml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    original = path.read_text(encoding="utf-8") if path.exists() else DEFAULT_CONFIG
+    section = re.search(r"(?m)^\[behavior\][ \t]*$", original)
+    setting = f"hold_key = {json.dumps(binding)}\n"
+    if section:
+        next_section = re.search(r"(?m)^\[[^\n]+\][ \t]*$", original[section.end():])
+        end = section.end() + next_section.start() if next_section else len(original)
+        body = original[section.end():end]
+        match = re.search(r"(?m)^[ \t]*hold_key[ \t]*=[^\n]*(?:\n|$)", body)
+        if match:
+            body = body[:match.start()] + setting + body[match.end():]
+        else:
+            body = body.rstrip() + "\n" + setting
+        updated = original[:section.end()] + body + original[end:]
+    else:
+        updated = original.rstrip() + "\n\n[behavior]\n" + setting
+    tomllib.loads(updated)
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=path.parent, prefix=path.name + ".", delete=False
+    ) as handle:
+        handle.write(updated)
+        temporary = Path(handle.name)
+    try:
+        temporary.chmod(stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o600)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)

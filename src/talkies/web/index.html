@@ -110,6 +110,33 @@
               <dd id="audioSetting">-</dd>
             </div>
           </dl>
+          <section class="hotkey-settings" aria-labelledby="hotkeyHeading">
+            <div class="section-heading">
+              <h2 id="hotkeyHeading">Hotkey</h2>
+              <span id="hotkeyCurrent" class="status-pill">-</span>
+            </div>
+            <div class="hotkey-card">
+              <label for="hotkeyBinding">Binding</label>
+              <div class="hotkey-input-row">
+                <input id="hotkeyBinding" name="hotkeyBinding" autocomplete="off" spellcheck="false" />
+                <button id="clearHotkeyButton" type="button" title="Clear binding">Clear</button>
+              </div>
+              <label for="hotkeyPreset">Alternative key</label>
+              <select id="hotkeyPreset" name="hotkeyPreset">
+                <option value="">Choose a key</option>
+                <option value="Hyper_L">Hyper key</option>
+                <option value="Super_R">Right Super</option>
+                <option value="Alt_R">Right Alt</option>
+                <option value="Caps_Lock">Caps Lock</option>
+                <option value="Control_R">Right Ctrl</option>
+              </select>
+              <div class="hotkey-actions">
+                <button id="captureHotkeyButton" type="button">Capture key press</button>
+                <button id="saveHotkeyButton" type="button">Save</button>
+              </div>
+              <p id="hotkeyState" role="status" aria-live="polite"></p>
+            </div>
+          </section>
           <h2>Breakdown</h2>
           <div id="breakdown" class="breakdown"></div>
           <h2>Dictionary</h2>

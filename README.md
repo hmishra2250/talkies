@@ -5,11 +5,16 @@ captures audio with `ffmpeg`, transcribes locally with
 [`faster-whisper`](https://github.com/SYSTRAN/faster-whisper), stores history in SQLite, and pastes
 dictation into the focused X11 application without sending speech to a cloud service.
 
-The main dictation flow is now press-and-hold:
+The main dictation flow is press-and-hold with a configurable key:
 
-1. Hold **Right Ctrl** and speak.
-2. Release **Right Ctrl** to transcribe and paste.
-3. Double-tap **Right Ctrl** to lock recording hands-free, then tap **Right Ctrl** again to stop.
+1. Open the dashboard's **Settings → Hotkey** panel and select **Capture key press** (or choose
+   another key). Press the desired key when prompted, then select **Save**.
+2. Hold the selected key and speak; release it to transcribe and paste.
+3. Double-tap the selected key to lock recording hands-free, then tap it again to stop.
+
+Right Ctrl remains the default for existing installs, but some laptops have no physical Right Ctrl.
+The X11 key map alone cannot tell which keys are actually present. Detection observes a real key
+press and can capture a Copilot key even when it sends a key combination.
 
 The installed GNOME shortcut, **Ctrl+Super+Space**, remains as a fallback toggle: press once to
 start, speak, then press again to stop and paste.
@@ -57,7 +62,8 @@ talkies doctor
 
 The dashboard is served by the daemon on `http://127.0.0.1:8765/`. It shows words today and this
 week, average words per minute, transcript counts, searchable history, retained audio playback,
-status filters, correction editing, clipboard delivery, and an editable replacement dictionary.
+status filters, correction editing, clipboard delivery, an editable replacement dictionary, and
+hotkey capture and selection.
 Use `talkies dashboard --no-open` to print the URL without opening a browser.
 
 Voice notes are written to `~/.local/share/talkies/notes/`. Meeting transcripts are written to
@@ -87,7 +93,8 @@ to download a missing model.
 
 ## Configure
 
-Edit `~/.config/talkies/config.toml`, then restart the service:
+Change the hold key in dashboard Settings; it applies immediately and is saved to
+`~/.config/talkies/config.toml`. For other settings, edit that file and restart the service:
 
 ```bash
 systemctl --user restart talkies.service
@@ -97,7 +104,7 @@ Useful defaults:
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `behavior.hold_key` | `"Control_R"` | X11 key name for press-and-hold dictation |
+| `behavior.hold_key` | `"Control_R"` | X11 key name, captured keycode, or key combination for press-and-hold dictation |
 | `behavior.hold_hotkey` | `true` | Enables the `xinput` hold listener when `DISPLAY` is set |
 | `behavior.keep_dictation_audio` | `true` | Keeps dictation audio for correction, replay, and benchmarks |
 | `behavior.dictation_audio_retention_days` | `14` | Prunes retained dictation audio after 14 days |

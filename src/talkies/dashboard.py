@@ -157,11 +157,46 @@ class _DashboardContext:
             "model": getattr(transcription, "model", None),
             "paste": getattr(behavior, "paste", None),
             "keep_dictation_audio": getattr(behavior, "keep_dictation_audio", None),
+            "hold_key": getattr(behavior, "hold_key", None),
             "replacements": [
                 {"phrase": phrase, "replacement": replacement}
                 for phrase, replacement in sorted(replacements.items())
             ],
         }
+
+    def hotkey(self) -> dict[str, object]:
+        if not hasattr(self.target, "hotkey_info"):
+            return {
+                "binding": None,
+                "available": False,
+                "recommendation": "Capture your Copilot key",
+                "recommendation_reason": (
+                    "Start Talkies on an X11 desktop to detect a physical key."
+                ),
+            }
+        return dict(self.target.hotkey_info())
+
+    def capture_hotkey(self) -> dict[str, object]:
+        if not hasattr(self.target, "start_hotkey_capture"):
+            raise DashboardError(HTTPStatus.NOT_IMPLEMENTED, "Hotkey capture is unavailable")
+        try:
+            return dict(self.target.start_hotkey_capture())
+        except RuntimeError as exc:
+            raise DashboardError(HTTPStatus.CONFLICT, str(exc)) from exc
+
+    def hotkey_capture_status(self) -> dict[str, object]:
+        if not hasattr(self.target, "hotkey_capture_status"):
+            raise DashboardError(HTTPStatus.NOT_IMPLEMENTED, "Hotkey capture is unavailable")
+        return dict(self.target.hotkey_capture_status())
+
+    def update_hotkey(self, binding: str) -> dict[str, object]:
+        if not hasattr(self.target, "set_hotkey"):
+            raise DashboardError(HTTPStatus.NOT_IMPLEMENTED, "Hotkey editing is unavailable")
+        try:
+            self.target.set_hotkey(binding)
+        except (ValueError, RuntimeError) as exc:
+            raise DashboardError(HTTPStatus.BAD_REQUEST, str(exc)) from exc
+        return self.hotkey()
 
     def repaste(self, transcript_id: int) -> dict[str, object]:
         if not hasattr(self.target, "handle"):
@@ -262,6 +297,9 @@ class _DashboardRequestHandler(BaseHTTPRequestHandler):
                 self._send_json({"ok": True})
                 threading.Thread(target=self.server.shutdown, daemon=True).start()
                 return
+            if parsed.path == "/api/hotkey/capture":
+                self._send_json({"ok": True, "capture": self.server.context.capture_hotkey()})
+                return
             if parsed.path == "/api/replacements":
                 payload = self._read_json()
                 phrase = str(payload.get("phrase", ""))
@@ -282,6 +320,22 @@ class _DashboardRequestHandler(BaseHTTPRequestHandler):
                 self._send_json({"ok": True, "item": item})
                 return
             raise DashboardError(HTTPStatus.NOT_FOUND, "Not found")
+        except DashboardError as exc:
+            self._send_json({"ok": False, "error": exc.message}, status=exc.status)
+        except Exception as exc:
+            self._send_json(
+                {"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR
+            )
+
+    def do_PUT(self) -> None:
+        try:
+            self._require_local_write()
+            if urlparse(self.path).path != "/api/hotkey":
+                raise DashboardError(HTTPStatus.NOT_FOUND, "Not found")
+            binding = self._read_json().get("binding")
+            if not isinstance(binding, str):
+                raise DashboardError(HTTPStatus.BAD_REQUEST, "Binding must be a string")
+            self._send_json({"ok": True, "hotkey": self.server.context.update_hotkey(binding)})
         except DashboardError as exc:
             self._send_json({"ok": False, "error": exc.message}, status=exc.status)
         except Exception as exc:
@@ -323,6 +377,12 @@ class _DashboardRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/settings":
             self._send_json({"ok": True, "settings": context.settings()})
+            return
+        if path == "/api/hotkey":
+            self._send_json({"ok": True, "hotkey": context.hotkey()})
+            return
+        if path == "/api/hotkey/capture":
+            self._send_json({"ok": True, "capture": context.hotkey_capture_status()})
             return
         if path.startswith("/api/transcripts/") and path.endswith("/audio"):
             self._serve_audio(context.audio_path(self._transcript_id(path.removesuffix("/audio"))))

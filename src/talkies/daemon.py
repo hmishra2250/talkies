@@ -16,7 +16,15 @@ from types import FrameType
 from typing import Any
 
 from .audio import AudioRecorder
-from .config import Config, data_dir, ensure_user_dirs, load_config, runtime_dir, save_replacements
+from .config import (
+    Config,
+    data_dir,
+    ensure_user_dirs,
+    load_config,
+    runtime_dir,
+    save_hold_key,
+    save_replacements,
+)
 from .dashboard import DashboardHandle, start_dashboard
 from .hotkeys import XInputHotkeyListener
 from .injector import InjectionError, TextInjector, window_app_name
@@ -89,6 +97,7 @@ class TalkiesService:
         self._last_model_activity = time.monotonic()
         self._warming_thread: threading.Thread | None = None
         self.dashboard_url: str | None = None
+        self.hotkeys: XInputHotkeyListener | None = None
 
     def warm_model(self) -> None:
         try:
@@ -132,6 +141,7 @@ class TalkiesService:
             "model_loaded": self.transcriber.loaded,
             "backend": self.transcriber.backend if self.transcriber.loaded else None,
             "dashboard_url": self.dashboard_url,
+            "hold_key": self.config.behavior.hold_key,
         }
 
     def start(self, mode: str) -> dict[str, Any]:
@@ -314,6 +324,51 @@ class TalkiesService:
         self.config.replacements = values
         return {"ok": True, "replacements": values}
 
+    def hotkey_info(self) -> dict[str, Any]:
+        listener = self.hotkeys
+        recommendation = listener.recommendation() if listener else None
+        return {
+            "binding": self.config.behavior.hold_key,
+            "available": bool(listener and listener.running),
+            "recommendation": recommendation or "Capture your Copilot key",
+            "recommendation_reason": (
+                "The X11 key map cannot confirm a physical key. Select Capture key press, then "
+                "press your Copilot key once to identify its actual signal."
+            ),
+        }
+
+    def start_hotkey_capture(self) -> dict[str, Any]:
+        with self._operation_lock:
+            if self.active:
+                raise RuntimeError("Finish the current recording before changing the hotkey")
+            if not self.hotkeys or not self.hotkeys.running:
+                raise RuntimeError("Key detection requires a running X11 hotkey listener")
+            return self.hotkeys.begin_capture()
+
+    def hotkey_capture_status(self) -> dict[str, Any]:
+        if not self.hotkeys:
+            return {"state": "idle"}
+        return self.hotkeys.capture_status()
+
+    def set_hotkey(self, binding: str) -> dict[str, Any]:
+        from .hotkeys import normalize_binding
+
+        binding = normalize_binding(binding)
+        with self._operation_lock:
+            if self.active:
+                raise RuntimeError("Finish the current recording before changing the hotkey")
+            previous = self.config.behavior.hold_key
+            if self.hotkeys:
+                self.hotkeys.set_hold_key(binding)
+            try:
+                save_hold_key(binding)
+            except Exception:
+                if self.hotkeys:
+                    self.hotkeys.set_hold_key(previous)
+                raise
+            self.config.behavior.hold_key = binding
+        return {"ok": True, "binding": binding}
+
     def handle(self, request: dict[str, Any]) -> dict[str, Any]:
         command = request.get("command")
         if command == "status":
@@ -380,6 +435,7 @@ class Daemon:
         if self.hotkeys:
             self.hotkeys.stop()
             self.hotkeys = None
+            self.service.hotkeys = None
         if self.dashboard:
             self.dashboard.shutdown()
             self.dashboard = None
@@ -404,6 +460,7 @@ class Daemon:
                 lambda action: self.service.handle({"command": action, "mode": "dictation"}),
                 hold_key=self.service.config.behavior.hold_key,
             )
+            self.service.hotkeys = self.hotkeys
             self.hotkeys.start()
         try:
             self.dashboard = start_dashboard(self.service, background=True)

@@ -44,6 +44,33 @@ class FakeService:
         return {"ok": True, "command": request["command"]}
 
 
+class FakeHotkeyService(FakeService):
+    def __init__(self, store: TranscriptStore) -> None:
+        super().__init__(store)
+        self.binding = "Control_R"
+        self.capture = {"state": "idle"}
+
+    def hotkey_info(self) -> dict[str, object]:
+        return {
+            "binding": self.binding,
+            "available": True,
+            "recommendation": "Detect Copilot key",
+            "recommendation_reason": "Press the key once to identify it.",
+        }
+
+    def start_hotkey_capture(self) -> dict[str, object]:
+        self.capture = {"state": "waiting"}
+        return self.capture
+
+    def hotkey_capture_status(self) -> dict[str, object]:
+        return self.capture
+
+    def set_hotkey(self, binding: str) -> None:
+        if not binding:
+            raise ValueError("Binding is required")
+        self.binding = binding
+
+
 def test_dashboard_serves_static_app_and_history_api(tmp_path: Path) -> None:
     store = TranscriptStore(tmp_path / "history.sqlite3")
     transcript_id = store.save(
@@ -197,6 +224,24 @@ def test_dashboard_rejects_cross_origin_write(tmp_path: Path) -> None:
         else:
             raise AssertionError("cross-origin write should fail")
         assert store.get(transcript_id)["text"] == "safe words"
+    finally:
+        handle.shutdown()
+
+
+def test_dashboard_can_capture_and_update_hotkey(tmp_path: Path) -> None:
+    service = FakeHotkeyService(TranscriptStore(tmp_path / "history.sqlite3"))
+    handle = start_dashboard(service, port=0)
+    try:
+        assert _read_json(f"{handle.url}api/hotkey")["hotkey"]["binding"] == "Control_R"
+        started = _send_json(f"{handle.url}api/hotkey/capture", "POST", {})
+        assert started["capture"]["state"] == "waiting"
+        service.capture = {"state": "captured", "binding": "Super_L+Shift_L+F23"}
+        captured = _read_json(f"{handle.url}api/hotkey/capture")
+        assert captured["capture"]["binding"] == "Super_L+Shift_L+F23"
+        saved = _send_json(
+            f"{handle.url}api/hotkey", "PUT", {"binding": "Super_L+Shift_L+F23"}
+        )
+        assert saved["hotkey"]["binding"] == "Super_L+Shift_L+F23"
     finally:
         handle.shutdown()
 

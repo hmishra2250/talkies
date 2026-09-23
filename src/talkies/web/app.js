@@ -4,6 +4,7 @@ const state = {
   selectedItem: null,
   query: "",
   status: "",
+  hotkeyCaptureTimer: null,
 };
 
 const nodes = {
@@ -27,6 +28,13 @@ const nodes = {
   modelSetting: document.querySelector("#modelSetting"),
   pasteSetting: document.querySelector("#pasteSetting"),
   audioSetting: document.querySelector("#audioSetting"),
+  hotkeyCurrent: document.querySelector("#hotkeyCurrent"),
+  hotkeyBinding: document.querySelector("#hotkeyBinding"),
+  hotkeyPreset: document.querySelector("#hotkeyPreset"),
+  hotkeyState: document.querySelector("#hotkeyState"),
+  clearHotkeyButton: document.querySelector("#clearHotkeyButton"),
+  captureHotkeyButton: document.querySelector("#captureHotkeyButton"),
+  saveHotkeyButton: document.querySelector("#saveHotkeyButton"),
   breakdown: document.querySelector("#breakdown"),
   dictionary: document.querySelector("#dictionary"),
   dictionaryForm: document.querySelector("#dictionaryForm"),
@@ -50,6 +58,18 @@ nodes.cancelButton?.addEventListener("click", () =>
   setSelectedStatus(state.selectedItem?.status === "cancelled" ? "saved" : "cancelled"),
 );
 nodes.pasteButton?.addEventListener("click", () => pasteSelected());
+nodes.clearHotkeyButton?.addEventListener("click", () => {
+  nodes.hotkeyBinding.value = "";
+  nodes.hotkeyState.textContent = "Cleared locally";
+});
+nodes.hotkeyPreset?.addEventListener("change", () => {
+  if (nodes.hotkeyPreset.value) {
+    nodes.hotkeyBinding.value = nodes.hotkeyPreset.value;
+    nodes.hotkeyState.textContent = "Ready to save";
+  }
+});
+nodes.captureHotkeyButton?.addEventListener("click", () => startHotkeyCapture());
+nodes.saveHotkeyButton?.addEventListener("click", () => saveHotkey());
 nodes.dictionaryForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   const phrase = nodes.dictionaryForm.elements.phrase.value.trim();
@@ -60,7 +80,13 @@ nodes.dictionaryForm?.addEventListener("submit", async (event) => {
 refresh();
 
 async function refresh() {
-  await Promise.all([refreshHealth(), refreshStats(), refreshSettings(), refreshHistory()]);
+  await Promise.all([
+    refreshHealth(),
+    refreshStats(),
+    refreshSettings(),
+    refreshHotkey(),
+    refreshHistory(),
+  ]);
 }
 
 async function refreshHealth() {
@@ -94,6 +120,136 @@ async function refreshSettings() {
   nodes.pasteSetting.textContent = valueLabel(settings.paste);
   nodes.audioSetting.textContent = settings.keep_dictation_audio ? "Kept" : "Temporary";
   renderDictionary(settings.replacements || []);
+}
+
+async function refreshHotkey() {
+  if (!nodes.hotkeyBinding) {
+    return;
+  }
+  try {
+    const response = await getJson("/api/hotkey");
+    renderHotkey(response);
+  } catch (error) {
+    nodes.hotkeyCurrent.textContent = "-";
+    nodes.hotkeyState.textContent = `Hotkey unavailable: ${error.message}`;
+  }
+}
+
+function renderHotkey(payload) {
+  const binding = payload.binding || payload.hotkey?.binding || "";
+  const recommendation = payload.recommendation || payload.hotkey?.recommendation || "";
+  const reason = payload.recommendation_reason || payload.hotkey?.recommendation_reason || "";
+  const available = payload.available || payload.hotkey?.available || [];
+  renderHotkeyPresets(available);
+  nodes.hotkeyCurrent.textContent = binding || "Unset";
+  nodes.hotkeyBinding.value = binding;
+  nodes.hotkeyState.textContent = recommendation
+    ? [`Suggested: ${recommendation}`, reason].filter(Boolean).join(" - ")
+    : "Ready";
+}
+
+function renderHotkeyPresets(available) {
+  if (!Array.isArray(available) || available.length === 0) {
+    return;
+  }
+  const current = nodes.hotkeyPreset.value;
+  const options = [new Option("Choose a key", "")];
+  for (const item of available) {
+    if (typeof item === "string") {
+      options.push(new Option(item, item));
+    } else if (item?.binding) {
+      options.push(new Option(item.label || item.binding, item.binding));
+    }
+  }
+  nodes.hotkeyPreset.replaceChildren(...options);
+  if (current && options.some((option) => option.value === current)) {
+    nodes.hotkeyPreset.value = current;
+  }
+}
+
+async function startHotkeyCapture() {
+  clearHotkeyCaptureTimer();
+  nodes.captureHotkeyButton.disabled = true;
+  nodes.hotkeyState.textContent = "Press the key you want to use";
+  try {
+    const response = await sendJson("/api/hotkey/capture", "POST", {});
+    if (response.error || response.supported === false) {
+      throw new Error(response.error || "Hotkey capture is not supported on this session");
+    }
+    const done = renderHotkeyCapture(response);
+    if (done) {
+      nodes.captureHotkeyButton.disabled = false;
+    } else {
+      state.hotkeyCaptureTimer = window.setInterval(pollHotkeyCapture, 700);
+    }
+  } catch (error) {
+    nodes.hotkeyState.textContent = `Capture unavailable: ${error.message}`;
+    nodes.captureHotkeyButton.disabled = false;
+  }
+}
+
+async function pollHotkeyCapture() {
+  try {
+    const response = await getJson("/api/hotkey/capture");
+    const done = renderHotkeyCapture(response);
+    if (done) {
+      clearHotkeyCaptureTimer();
+      nodes.captureHotkeyButton.disabled = false;
+    }
+  } catch (error) {
+    clearHotkeyCaptureTimer();
+    nodes.hotkeyState.textContent = `Capture failed: ${error.message}`;
+    nodes.captureHotkeyButton.disabled = false;
+  }
+}
+
+function renderHotkeyCapture(payload) {
+  const status = payload.state || payload.status || payload.capture?.state || "waiting";
+  const binding = payload.binding || payload.capture?.binding || "";
+  if (binding) {
+    nodes.hotkeyBinding.value = binding;
+    nodes.hotkeyState.textContent = `Detected ${binding}`;
+    return true;
+  }
+  if (status === "error" || payload.supported === false) {
+    nodes.hotkeyState.textContent =
+      payload.error || payload.message || "Hotkey capture is not supported on this session";
+    return true;
+  }
+  if (status === "timeout") {
+    nodes.hotkeyState.textContent = "Capture timed out";
+    return true;
+  }
+  nodes.hotkeyState.textContent = payload.message || "Waiting for a key press";
+  return false;
+}
+
+async function saveHotkey() {
+  const binding = nodes.hotkeyBinding.value.trim();
+  if (!binding) {
+    nodes.hotkeyState.textContent = "Choose a key before saving";
+    return;
+  }
+  nodes.saveHotkeyButton.disabled = true;
+  nodes.hotkeyState.textContent = "Saving";
+  try {
+    const response = await sendJson("/api/hotkey", "PUT", { binding });
+    renderHotkey(response);
+    nodes.hotkeyPreset.value = "";
+    nodes.hotkeyCurrent.textContent = binding;
+    nodes.hotkeyState.textContent = "Saved";
+  } catch (error) {
+    nodes.hotkeyState.textContent = error.message;
+  } finally {
+    nodes.saveHotkeyButton.disabled = false;
+  }
+}
+
+function clearHotkeyCaptureTimer() {
+  if (state.hotkeyCaptureTimer) {
+    window.clearInterval(state.hotkeyCaptureTimer);
+    state.hotkeyCaptureTimer = null;
+  }
 }
 
 async function refreshHistory() {

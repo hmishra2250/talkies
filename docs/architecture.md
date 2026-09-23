@@ -4,7 +4,7 @@
 
 ```text
 Ctrl+Super+Space -> talkies CLI -> Unix socket -> resident daemon
-Right Ctrl hold  -> daemon X11 xinput listener  -> Talkies service
+Configured hold key -> daemon X11 xinput listener -> Talkies service
 
 Talkies service
   -> ffmpeg/PulseAudio capture
@@ -25,7 +25,9 @@ to release model, CUDA, and VAD memory that ordinary Python cleanup may not retu
 ## Current Linux Features
 
 - **Hold dictation:** `XInputHotkeyListener` watches X11 key press/release events through
-  `xinput test-xi2 --root`. The default `behavior.hold_key` is `Control_R`.
+  `xinput test-xi2 --root`. The default `behavior.hold_key` is `Control_R`, but the dashboard can
+  capture a real physical key or key combination (including Copilot variants), apply it live, and
+  persist it without changing unrelated configuration.
 - **Double-tap lock:** a quick double tap of the hold key starts dictation without continuing to
   hold the key. Pressing the hold key again stops and pastes.
 - **Fallback toggle:** the installer registers the GNOME custom shortcut `Ctrl+Super+Space`, which
@@ -33,8 +35,8 @@ to release model, CUDA, and VAD memory that ordinary Python cleanup may not retu
 - **Cancel and undo:** `talkies cancel` saves the active recording as `cancelled` without pasting.
   `talkies undo` pastes the most recent cancelled transcript, or a specific cancelled transcript id.
 - **Dashboard:** the daemon starts `http://127.0.0.1:8765/` with stats, history search, status
-  filters, retained audio playback, correction editing, clipboard delivery, settings, and an
-  editable dictionary.
+  filters, retained audio playback, correction editing, clipboard delivery, hotkey capture and
+  settings, and an editable dictionary.
 - **History:** `TranscriptStore` stores transcript text, raw text, status, duration, app name,
   retained audio path, note path, and edit timestamp in SQLite.
 - **Benchmarks:** dashboard corrections set `edited_at`; `talkies export-benchmark` writes corrected
