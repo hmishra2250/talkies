@@ -1,9 +1,14 @@
 const state = {
   items: [],
-  selectedId: null,
-  selectedItem: null,
   query: "",
   status: "",
+  hasMore: false,
+  nextBeforeId: null,
+  loadingMore: false,
+  feedError: "",
+  editingIds: new Set(),
+  drafts: new Map(),
+  messages: new Map(),
   hotkeyCaptureTimer: null,
 };
 
@@ -17,14 +22,6 @@ const nodes = {
   searchInput: document.querySelector("#searchInput"),
   statusFilter: document.querySelector("#statusFilter"),
   historyList: document.querySelector("#historyList"),
-  detailMeta: document.querySelector("#detailMeta"),
-  detailTitle: document.querySelector("#detailTitle"),
-  audioPlayer: document.querySelector("#audioPlayer"),
-  editor: document.querySelector("#editor"),
-  editState: document.querySelector("#editState"),
-  saveButton: document.querySelector("#saveButton"),
-  cancelButton: document.querySelector("#cancelButton"),
-  pasteButton: document.querySelector("#pasteButton"),
   modelSetting: document.querySelector("#modelSetting"),
   pasteSetting: document.querySelector("#pasteSetting"),
   audioSetting: document.querySelector("#audioSetting"),
@@ -46,18 +43,14 @@ nodes.searchInput?.addEventListener(
   "input",
   debounce(() => {
     state.query = nodes.searchInput.value;
-    refreshHistory();
+    refreshHistory({ reset: true });
   }, 180),
 );
 nodes.statusFilter?.addEventListener("change", () => {
   state.status = nodes.statusFilter.value;
-  refreshHistory();
+  refreshHistory({ reset: true });
 });
-nodes.saveButton?.addEventListener("click", () => saveCorrection());
-nodes.cancelButton?.addEventListener("click", () =>
-  setSelectedStatus(state.selectedItem?.status === "cancelled" ? "saved" : "cancelled"),
-);
-nodes.pasteButton?.addEventListener("click", () => pasteSelected());
+nodes.historyList?.addEventListener("click", (event) => handleHistoryClick(event));
 nodes.clearHotkeyButton?.addEventListener("click", () => {
   nodes.hotkeyBinding.value = "";
   nodes.hotkeyState.textContent = "Cleared locally";
@@ -108,7 +101,7 @@ async function refreshStats() {
   const stats = response.stats || {};
   nodes.wordsToday.textContent = formatNumber(stats.words_today || 0);
   nodes.wordsWeek.textContent = formatNumber(stats.words_week || 0);
-  nodes.wpm.textContent = stats.words_per_minute ? `${stats.words_per_minute} wpm` : "-";
+  nodes.wpm.textContent = stats.words_per_minute ? `${stats.words_per_minute} wpm` : "—";
   nodes.transcriptCount.textContent = formatNumber(stats.count || stats.items || 0);
   renderBreakdown(stats.by_status || {});
 }
@@ -252,22 +245,43 @@ function clearHotkeyCaptureTimer() {
   }
 }
 
-async function refreshHistory() {
-  const params = new URLSearchParams({ limit: "80" });
+async function refreshHistory({ reset = false, append = false } = {}) {
+  if (reset) {
+    state.items = [];
+    state.hasMore = false;
+    state.nextBeforeId = null;
+    state.feedError = "";
+    state.editingIds.clear();
+    state.drafts.clear();
+    state.messages.clear();
+  }
+  if (append && state.loadingMore) {
+    return;
+  }
+  const params = new URLSearchParams({ limit: "30" });
   if (state.query) {
     params.set("query", state.query);
   }
   if (state.status) {
     params.set("status", state.status);
   }
-  const response = await getJson(`/api/history?${params}`);
-  state.items = response.items || [];
-  if (!state.items.some((item) => item.id === state.selectedId)) {
-    state.selectedId = state.items[0]?.id || null;
+  if (append && state.nextBeforeId) {
+    params.set("before_id", String(state.nextBeforeId));
   }
-  state.selectedItem = state.items.find((item) => item.id === state.selectedId) || null;
-  renderHistory();
-  renderDetail();
+  state.loadingMore = append;
+  state.feedError = "";
+  try {
+    const response = await getJson(`/api/history?${params}`);
+    const items = response.items || [];
+    state.items = append ? [...state.items, ...items] : items;
+    state.hasMore = Boolean(response.has_more);
+    state.nextBeforeId = response.next_before_id || null;
+  } catch (error) {
+    state.feedError = error.message;
+  } finally {
+    state.loadingMore = false;
+    renderHistory();
+  }
 }
 
 function renderHistory() {
@@ -275,61 +289,157 @@ function renderHistory() {
   if (state.items.length === 0) {
     const empty = document.createElement("div");
     empty.className = "history-empty";
-    empty.textContent = "No transcripts";
+    empty.textContent = state.feedError || "No transcripts";
     nodes.historyList.append(empty);
     return;
   }
   for (const item of state.items) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "history-item";
-    button.setAttribute("role", "listitem");
-    button.setAttribute("aria-selected", String(item.id === state.selectedId));
-    button.addEventListener("click", () => {
-      state.selectedId = item.id;
-      state.selectedItem = item;
-      renderHistory();
-      renderDetail();
-    });
-
-    const title = document.createElement("strong");
-    title.textContent = compactText(item.text) || "Untitled";
-    const meta = document.createElement("span");
-    meta.textContent = `${formatDate(item.created_at)} - ${item.mode} - ${item.status}`;
-    button.append(title, meta);
-    nodes.historyList.append(button);
+    nodes.historyList.append(renderTranscriptCard(item));
+  }
+  if (state.feedError) {
+    const error = document.createElement("p");
+    error.className = "feed-error";
+    error.textContent = state.feedError;
+    nodes.historyList.append(error);
+  }
+  if (state.hasMore) {
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "load-more";
+    more.dataset.action = "load-more";
+    more.disabled = state.loadingMore;
+    more.textContent = state.loadingMore ? "Loading older..." : "Load older";
+    nodes.historyList.append(more);
   }
 }
 
-function renderDetail() {
-  const item = state.selectedItem;
-  nodes.cancelButton.disabled = !item;
-  nodes.pasteButton.disabled = !item;
-  nodes.saveButton.disabled = !item;
-  nodes.cancelButton.textContent = item?.status === "cancelled" ? "Restore" : "Mark cancelled";
-  nodes.cancelButton.setAttribute("aria-label", nodes.cancelButton.textContent);
-  if (!item) {
-    nodes.detailMeta.textContent = "No item selected";
-    nodes.detailTitle.textContent = "History";
-    nodes.editor.value = "";
-    nodes.editor.disabled = true;
-    nodes.audioPlayer.hidden = true;
-    nodes.audioPlayer.removeAttribute("src");
-    nodes.editState.textContent = "Ready";
+function renderTranscriptCard(item) {
+  const card = document.createElement("article");
+  card.className = "transcript-card";
+  card.setAttribute("role", "listitem");
+  card.dataset.id = String(item.id);
+
+  const header = document.createElement("div");
+  header.className = "transcript-card-header";
+  const meta = document.createElement("p");
+  meta.className = "transcript-meta";
+  meta.textContent = `${formatDate(item.created_at)} - ${item.mode} - ${item.status} - ${wordLabel(item)}`;
+  const actions = document.createElement("div");
+  actions.className = "transcript-actions";
+  const editing = state.editingIds.has(item.id);
+  actions.append(
+    actionButton("copy", "Copy"),
+    actionButton("status", item.status === "cancelled" ? "Restore" : "Mark cancelled"),
+    actionButton("edit", editing ? "Save" : "Edit"),
+  );
+  if (editing) {
+    actions.append(actionButton("discard", "Discard"));
+  }
+  header.append(meta, actions);
+
+  const body = document.createElement("div");
+  body.className = "transcript-body";
+  if (state.editingIds.has(item.id)) {
+    const label = document.createElement("label");
+    label.className = "editor-label";
+    label.htmlFor = `transcript-${item.id}`;
+    label.textContent = "Transcript text";
+    const editor = document.createElement("textarea");
+    editor.id = `transcript-${item.id}`;
+    editor.className = "transcript-editor";
+    editor.spellcheck = true;
+    editor.value = state.drafts.get(item.id) ?? item.text ?? "";
+    editor.addEventListener("input", () => {
+      state.drafts.set(item.id, editor.value);
+      autosizeTextarea(editor);
+    });
+    body.append(label, editor);
+    queueMicrotask(() => autosizeTextarea(editor));
+  } else if (compactText(item.text)) {
+    const text = document.createElement("p");
+    text.className = "transcript-text";
+    text.textContent = item.text;
+    body.append(text);
+  } else {
+    const empty = document.createElement("p");
+    empty.className = "transcript-empty";
+    empty.textContent = item.audio_path
+      ? "No speech was captured in the transcript. The audio is still available below."
+      : "No speech was captured in this transcript.";
+    body.append(empty);
+  }
+
+  if (item.audio_path) {
+    const audio = document.createElement("details");
+    audio.className = "audio-section";
+    const summary = document.createElement("summary");
+    summary.textContent = "Audio recording";
+    const player = document.createElement("audio");
+    player.controls = true;
+    player.preload = "none";
+    player.src = `/api/transcripts/${item.id}/audio`;
+    audio.append(summary, player);
+    body.append(audio);
+  }
+
+  const message = document.createElement("p");
+  message.className = "entry-state";
+  message.setAttribute("role", "status");
+  message.setAttribute("aria-live", "polite");
+  message.textContent = state.messages.get(item.id) || "";
+  card.append(header, body, message);
+  return card;
+}
+
+function actionButton(action, label) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "secondary-button";
+  button.dataset.action = action;
+  button.textContent = label;
+  return button;
+}
+
+async function handleHistoryClick(event) {
+  const button = event.target.closest("button[data-action]");
+  if (!button) {
     return;
   }
-  nodes.editor.disabled = false;
-  nodes.detailMeta.textContent = `${formatDate(item.created_at)} - ${item.mode} - ${item.status}`;
-  nodes.detailTitle.textContent = `${item.words} words`;
-  nodes.editor.value = item.text;
-  nodes.editState.textContent = "Ready";
-  if (item.audio_path) {
-    nodes.audioPlayer.hidden = false;
-    nodes.audioPlayer.src = `/api/transcripts/${item.id}/audio`;
-  } else {
-    nodes.audioPlayer.hidden = true;
-    nodes.audioPlayer.removeAttribute("src");
+  if (button.dataset.action === "load-more") {
+    await refreshHistory({ append: true });
+    return;
   }
+  const card = button.closest(".transcript-card");
+  const item = state.items.find((candidate) => String(candidate.id) === card?.dataset.id);
+  if (!item) {
+    return;
+  }
+  if (button.dataset.action === "copy") {
+    await pasteSelected(item);
+  } else if (button.dataset.action === "status") {
+    await setSelectedStatus(item, item.status === "cancelled" ? "saved" : "cancelled");
+  } else if (button.dataset.action === "edit") {
+    if (state.editingIds.has(item.id)) {
+      const editor = card.querySelector(".transcript-editor");
+      const text = editor?.value || "";
+      state.drafts.set(item.id, text);
+      await saveCorrection(item, text);
+    } else {
+      state.editingIds.add(item.id);
+      state.drafts.set(item.id, item.text || "");
+      renderHistory();
+    }
+  } else if (button.dataset.action === "discard") {
+    state.editingIds.delete(item.id);
+    state.drafts.delete(item.id);
+    state.messages.set(item.id, "Edit discarded");
+    renderHistory();
+  }
+}
+
+function autosizeTextarea(editor) {
+  editor.style.height = "auto";
+  editor.style.height = `${Math.max(editor.scrollHeight, 160)}px`;
 }
 
 function renderBreakdown(statuses) {
@@ -394,48 +504,50 @@ async function updateReplacement(phrase, replacement) {
   }
 }
 
-async function saveCorrection() {
-  if (!state.selectedItem) {
-    return;
-  }
-  nodes.editState.textContent = "Saving";
+async function saveCorrection(item, text) {
+  state.messages.set(item.id, "Saving");
+  renderHistory();
   try {
-    const response = await sendJson(`/api/transcripts/${state.selectedItem.id}`, "PATCH", {
-      text: nodes.editor.value,
+    const response = await sendJson(`/api/transcripts/${item.id}`, "PATCH", {
+      text,
     });
+    state.editingIds.delete(item.id);
+    state.drafts.delete(item.id);
+    state.messages.set(response.item.id, "Saved");
     updateSelected(response.item);
-    nodes.editState.textContent = "Saved";
     await refreshStats();
   } catch (error) {
-    nodes.editState.textContent = error.message;
+    state.messages.set(item.id, error.message);
+    renderHistory();
   }
 }
 
-async function setSelectedStatus(status) {
-  if (!state.selectedItem) {
-    return;
-  }
+async function setSelectedStatus(item, status) {
+  state.messages.set(item.id, status === "cancelled" ? "Marking cancelled" : "Restoring");
+  renderHistory();
   try {
-    const response = await sendJson(`/api/transcripts/${state.selectedItem.id}/status`, "POST", {
+    const response = await sendJson(`/api/transcripts/${item.id}/status`, "POST", {
       status,
     });
+    state.messages.set(response.item.id, status === "cancelled" ? "Marked cancelled" : "Restored");
     updateSelected(response.item);
-    nodes.editState.textContent = status === "cancelled" ? "Marked cancelled" : "Restored";
     await refreshStats();
   } catch (error) {
-    nodes.editState.textContent = error.message;
+    state.messages.set(item.id, error.message);
+    renderHistory();
   }
 }
 
-async function pasteSelected() {
-  if (!state.selectedItem) {
-    return;
-  }
+async function pasteSelected(item) {
+  state.messages.set(item.id, "Copying");
+  renderHistory();
   try {
-    await sendJson(`/api/transcripts/${state.selectedItem.id}/paste`, "POST", {});
-    nodes.editState.textContent = "Copied. Paste in your app.";
+    await sendJson(`/api/transcripts/${item.id}/paste`, "POST", {});
+    state.messages.set(item.id, "Copied. Paste in your app.");
+    renderHistory();
   } catch (error) {
-    nodes.editState.textContent = error.message;
+    state.messages.set(item.id, error.message);
+    renderHistory();
   }
 }
 
@@ -444,10 +556,7 @@ function updateSelected(item) {
   if (index >= 0) {
     state.items[index] = item;
   }
-  state.selectedId = item.id;
-  state.selectedItem = item;
   renderHistory();
-  renderDetail();
 }
 
 async function getJson(path) {
@@ -485,6 +594,11 @@ function debounce(callback, delay) {
 
 function compactText(text) {
   return String(text || "").replace(/\s+/g, " ").trim();
+}
+
+function wordLabel(item) {
+  const words = Number(item?.words || 0);
+  return `${formatNumber(words)} ${words === 1 ? "word" : "words"}`;
 }
 
 function formatDate(value) {

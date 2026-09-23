@@ -84,12 +84,23 @@ class _DashboardContext:
         store = getattr(target, "store", target)
         return cls(target=target, store=store)
 
-    def history(self, *, limit: int, query: str = "", status: str = "") -> dict[str, object]:
+    def history(
+        self, *, limit: int, query: str = "", status: str = "", before_id: int | None = None
+    ) -> dict[str, object]:
         if not hasattr(self.store, "search"):
             raise DashboardError(HTTPStatus.NOT_IMPLEMENTED, "Store search is unavailable")
-        rows = self.store.search(limit=limit, query=query, status=status)
+        rows = self.store.search(
+            limit=limit + 1, query=query, status=status, before_id=before_id
+        )
+        has_more = len(rows) > limit
+        rows = rows[:limit]
         items = [_normalise_transcript(row) for row in rows]
-        return {"items": items, "count": len(items)}
+        return {
+            "items": items,
+            "count": len(items),
+            "has_more": has_more,
+            "next_before_id": items[-1]["id"] if has_more and items else None,
+        }
 
     def get(self, transcript_id: int) -> dict[str, object]:
         if not hasattr(self.store, "get"):
@@ -365,10 +376,14 @@ class _DashboardRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/history":
             limit = _bounded_int(_first(query, "limit") or "50", default=50, lower=1, upper=200)
+            before_id = _bounded_int(
+                _first(query, "before_id") or "0", default=0, lower=0, upper=2**63 - 1
+            )
             body = context.history(
                 limit=limit,
                 query=_first(query, "query") or "",
                 status=_first(query, "status") or "",
+                before_id=before_id or None,
             )
             self._send_json({"ok": True, **body})
             return

@@ -99,6 +99,29 @@ def test_dashboard_serves_static_app_and_history_api(tmp_path: Path) -> None:
         handle.shutdown()
 
 
+def test_dashboard_history_pages_by_cursor(tmp_path: Path) -> None:
+    store = TranscriptStore(tmp_path / "history.sqlite3")
+    ids = [
+        store.save(
+            mode="dictation", text=f"entry {index}", audio_path=None,
+            note_path=None, metadata={},
+        )
+        for index in range(3)
+    ]
+    handle = start_dashboard(store, port=0)
+    try:
+        first = _read_json(f"{handle.url}api/history?limit=2")
+        assert [item["id"] for item in first["items"]] == ids[:0:-1]
+        assert first["has_more"] is True
+        older = _read_json(
+            f"{handle.url}api/history?limit=2&before_id={first['next_before_id']}"
+        )
+        assert [item["id"] for item in older["items"]] == [ids[0]]
+        assert older["has_more"] is False
+    finally:
+        handle.shutdown()
+
+
 def test_dashboard_serves_retained_audio_by_transcript_id(tmp_path: Path) -> None:
     store = TranscriptStore(tmp_path / "history.sqlite3")
     audio_path = tmp_path / "clip.wav"

@@ -164,7 +164,7 @@ class TalkiesService:
         self._last_model_activity = time.monotonic()
         self.warm_model_in_background()
         labels = {
-            "dictation": ("Listening…", "Use the hotkey again to paste"),
+            "dictation": ("Listening…", "Release the hold key, or use the toggle shortcut again"),
             "note": ("Recording voice note…", "Run “talkies note” again to save"),
             "meeting": ("Recording meeting…", "Microphone and speaker audio are being captured"),
         }
@@ -184,6 +184,9 @@ class TalkiesService:
                 self.active = None
                 if active.path.exists() and active.path.stat().st_size <= 44:
                     active.path.unlink()
+                publish(
+                    {"status": "ready", "message": "Recording ended", "detail": "No audio captured"}
+                )
             raise
         self.active = None
         notify("Transcribing locally…", self.config.transcription.model, urgency="low")
@@ -251,6 +254,7 @@ class TalkiesService:
             path.unlink(missing_ok=True)
         if not text:
             notify("No speech detected", "Try again and speak closer to the microphone")
+            publish({"status": "ready", "message": "No speech detected", "detail": "Try again"})
         elif cancelled:
             notify("Recording cancelled", "Saved in history", urgency="low")
             publish({"status": "cancelled", "detail": "Saved in history"})

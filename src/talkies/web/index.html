@@ -14,7 +14,7 @@
           <h1>Talkies</h1>
           <p id="serviceState">Connecting</p>
         </div>
-        <button id="refreshButton" class="icon-button" type="button" title="Refresh" aria-label="Refresh">
+        <button id="refreshButton" class="secondary-button" type="button" title="Refresh" aria-label="Refresh">
           Refresh
         </button>
       </header>
@@ -23,23 +23,30 @@
         <article>
           <span>Today</span>
           <strong id="wordsToday">0</strong>
+          <small>words</small>
         </article>
         <article>
           <span>This week</span>
           <strong id="wordsWeek">0</strong>
+          <small>words</small>
+        </article>
+        <article title="Calculated only from recordings with reliable durations; legacy items without timing are not included.">
+          <span>Dictation pace</span>
+          <strong id="wpm">—</strong>
+          <small>reliable recordings only</small>
         </article>
         <article>
-          <span>Speed</span>
-          <strong id="wpm">-</strong>
-        </article>
-        <article>
-          <span>Items</span>
+          <span>History</span>
           <strong id="transcriptCount">0</strong>
+          <small>items</small>
         </article>
       </section>
 
       <section class="workspace">
-        <aside class="history-panel" aria-label="Transcript history">
+        <section class="history-panel" aria-label="Transcript history">
+          <div class="panel-heading">
+            <h2>History</h2>
+          </div>
           <div class="filters">
             <label>
               <span>Search</span>
@@ -57,64 +64,31 @@
             </label>
           </div>
           <div id="historyList" class="history-list" role="list"></div>
-        </aside>
-
-        <section class="detail-panel" aria-label="Transcript detail">
-          <div class="detail-header">
-            <div>
-              <span id="detailMeta" class="eyebrow">No item selected</span>
-              <h2 id="detailTitle">History</h2>
-            </div>
-            <div class="toolbar">
-              <button
-                id="cancelButton"
-                class="icon-button"
-                type="button"
-                title="Mark cancelled"
-                aria-label="Mark cancelled"
-              >
-                Mark cancelled
-              </button>
-              <button
-                id="pasteButton"
-                class="icon-button"
-                type="button"
-                title="Copy for paste"
-                aria-label="Copy for paste"
-              >
-                Copy for paste
-              </button>
-            </div>
-          </div>
-          <audio id="audioPlayer" controls></audio>
-          <textarea id="editor" spellcheck="true"></textarea>
-          <div class="editor-footer">
-            <span id="editState">Ready</span>
-            <button id="saveButton" type="button">Save Correction</button>
-          </div>
         </section>
 
         <aside class="settings-panel" aria-label="Settings">
-          <h2>Settings</h2>
-          <dl>
-            <div>
-              <dt>Model</dt>
-              <dd id="modelSetting">-</dd>
-            </div>
-            <div>
-              <dt>Paste</dt>
-              <dd id="pasteSetting">-</dd>
-            </div>
-            <div>
-              <dt>Audio</dt>
-              <dd id="audioSetting">-</dd>
-            </div>
-          </dl>
-          <section class="hotkey-settings" aria-labelledby="hotkeyHeading">
-            <div class="section-heading">
-              <h2 id="hotkeyHeading">Hotkey</h2>
+          <details open>
+            <summary>Settings</summary>
+            <dl>
+              <div>
+                <dt>Model</dt>
+                <dd id="modelSetting">-</dd>
+              </div>
+              <div>
+                <dt>Paste</dt>
+                <dd id="pasteSetting">-</dd>
+              </div>
+              <div>
+                <dt>Audio</dt>
+                <dd id="audioSetting">-</dd>
+              </div>
+            </dl>
+          </details>
+          <details class="hotkey-settings">
+            <summary>
+              <span>Hotkey</span>
               <span id="hotkeyCurrent" class="status-pill">-</span>
-            </div>
+            </summary>
             <div class="hotkey-card">
               <label for="hotkeyBinding">Binding</label>
               <div class="hotkey-input-row">
@@ -136,19 +110,23 @@
               </div>
               <p id="hotkeyState" role="status" aria-live="polite"></p>
             </div>
-          </section>
-          <h2>Breakdown</h2>
-          <div id="breakdown" class="breakdown"></div>
-          <h2>Dictionary</h2>
-          <form id="dictionaryForm" class="dictionary-form">
-            <label for="dictionaryPhrase">Spoken phrase</label>
-            <input id="dictionaryPhrase" name="phrase" maxlength="100" required />
-            <label for="dictionaryReplacement">Write as</label>
-            <input id="dictionaryReplacement" name="replacement" maxlength="200" required />
-            <button type="submit">Add replacement</button>
-          </form>
-          <p id="dictionaryState" role="status" aria-live="polite"></p>
-          <div id="dictionary" class="dictionary"></div>
+          </details>
+          <details>
+            <summary>Breakdown</summary>
+            <div id="breakdown" class="breakdown"></div>
+          </details>
+          <details>
+            <summary>Dictionary</summary>
+            <form id="dictionaryForm" class="dictionary-form">
+              <label for="dictionaryPhrase">Spoken phrase</label>
+              <input id="dictionaryPhrase" name="phrase" maxlength="100" required />
+              <label for="dictionaryReplacement">Write as</label>
+              <input id="dictionaryReplacement" name="replacement" maxlength="200" required />
+              <button type="submit">Add replacement</button>
+            </form>
+            <p id="dictionaryState" role="status" aria-live="polite"></p>
+            <div id="dictionary" class="dictionary"></div>
+          </details>
         </aside>
       </section>
     </main>

@@ -35,6 +35,11 @@ class FailingTranscriber(FakeTranscriber):
         raise RuntimeError("model failed")
 
 
+class SilentTranscriber(FakeTranscriber):
+    def transcribe(self, _path: Path):
+        return "", {"model": "fake"}
+
+
 class ColdTranscriber(FakeTranscriber):
     def __init__(self) -> None:
         self.loaded = False
@@ -218,9 +223,27 @@ def test_failed_transcription_reports_and_keeps_raw_audio(tmp_path: Path, monkey
 def test_empty_recording_recovers_to_idle(tmp_path: Path, monkeypatch) -> None:
     instance = service(tmp_path, monkeypatch)
     instance.recorder = EmptyRecorder()
+    states: list[dict[str, object]] = []
+    monkeypatch.setattr("talkies.daemon.publish", states.append)
     instance.handle({"command": "start", "mode": "dictation"})
     path = instance.active.path
     failed = instance.handle({"command": "stop"})
     assert failed["ok"] is False
     assert instance.status()["state"] == "idle"
     assert not path.exists()
+    assert states[-1] == {
+        "status": "ready", "message": "Recording ended", "detail": "No audio captured"
+    }
+
+
+def test_no_speech_recording_closes_listening_overlay(tmp_path: Path, monkeypatch) -> None:
+    instance = service(tmp_path, monkeypatch)
+    instance.transcriber = SilentTranscriber()
+    states: list[dict[str, object]] = []
+    monkeypatch.setattr("talkies.daemon.publish", states.append)
+    instance.handle({"command": "start", "mode": "dictation"})
+    finished = instance.handle({"command": "stop"})
+    assert finished["ok"] is True
+    assert finished["text"] == ""
+    assert instance.status()["state"] == "idle"
+    assert states[-1] == {"status": "ready", "message": "No speech detected", "detail": "Try again"}

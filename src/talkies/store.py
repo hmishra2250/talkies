@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from .config import data_dir, state_dir
+
+MIN_WPM_SAMPLE_SECONDS = 1.0
+MAX_PLAUSIBLE_WPM = 350
 
 
 class TranscriptStore:
@@ -84,7 +88,12 @@ class TranscriptStore:
         return self.search(limit=limit)
 
     def search(
-        self, *, limit: int = 100, query: str | None = "", status: str | None = ""
+        self,
+        *,
+        limit: int = 100,
+        query: str | None = "",
+        status: str | None = "",
+        before_id: int | None = None,
     ) -> list[dict[str, object]]:
         clauses: list[str] = []
         parameters: list[object] = []
@@ -95,6 +104,9 @@ class TranscriptStore:
         if status:
             clauses.append("status = ?")
             parameters.append(status)
+        if before_id is not None:
+            clauses.append("id < ?")
+            parameters.append(before_id)
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
         parameters.append(max(1, min(limit, 500)))
         with self._connect() as connection:
@@ -138,6 +150,8 @@ class TranscriptStore:
                 "SELECT created_at, text, duration_seconds, mode, status, app_name FROM transcripts"
             ).fetchall()
         words_today = words_week = total_words = 0
+        wpm_words = 0
+        wpm_week_words = 0
         speaking_seconds = speaking_week = 0.0
         by_status: dict[str, int] = {}
         by_mode: dict[str, int] = {}
@@ -154,9 +168,15 @@ class TranscriptStore:
             words_today += words if stamp >= today else 0
             words_week += words if stamp >= week else 0
             total_words += words
-            speaking_seconds += duration or 0
-            speaking_week += (duration or 0) if stamp >= week else 0
-        average_wpm = round(total_words * 60 / speaking_seconds) if speaking_seconds else 0
+            valid_duration = _valid_wpm_duration(duration, words)
+            if valid_duration is None:
+                continue
+            wpm_words += words
+            speaking_seconds += valid_duration
+            if stamp >= week:
+                wpm_week_words += words
+                speaking_week += valid_duration
+        average_wpm = round(wpm_words * 60 / speaking_seconds) if speaking_seconds else 0
         return {
             "words_today": words_today,
             "words_week": words_week,
@@ -164,7 +184,7 @@ class TranscriptStore:
             "average_wpm": average_wpm,
             "words_per_minute": average_wpm,
             "total_words": total_words,
-            "estimated_minutes_saved": round(max(0, words_week / 40 - speaking_week / 60), 1),
+            "estimated_minutes_saved": round(max(0, wpm_week_words / 40 - speaking_week / 60), 1),
             "by_status": by_status,
             "by_mode": by_mode,
             "words_by_app": by_app,
@@ -200,6 +220,20 @@ class TranscriptStore:
             for audio_path, text in rows
             if Path(audio_path).is_file() and text.strip()
         ]
+
+
+def _valid_wpm_duration(value: object, word_count: int) -> float | None:
+    if word_count <= 0:
+        return None
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(seconds) or seconds < MIN_WPM_SAMPLE_SECONDS:
+        return None
+    if word_count * 60 / seconds > MAX_PLAUSIBLE_WPM:
+        return None
+    return seconds
 
 
 def write_note(mode: str, text: str, audio_path: Path | None, started_at: datetime) -> Path:
