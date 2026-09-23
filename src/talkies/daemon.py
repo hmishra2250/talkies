@@ -16,9 +16,10 @@ from types import FrameType
 from typing import Any
 
 from .audio import AudioRecorder
-from .config import Config, data_dir, ensure_user_dirs, load_config, runtime_dir
+from .config import Config, data_dir, ensure_user_dirs, load_config, runtime_dir, save_replacements
 from .dashboard import DashboardHandle, start_dashboard
-from .injector import InjectionError, TextInjector
+from .hotkeys import XInputHotkeyListener
+from .injector import InjectionError, TextInjector, window_app_name
 from .overlay import publish, start_overlay, stop_overlay
 from .store import TranscriptStore, write_note
 from .text import normalize_text
@@ -66,6 +67,7 @@ class ActiveRecording:
     started_at: datetime
     path: Path
     target_window_id: str | None = None
+    app_name: str | None = None
 
 
 class TalkiesService:
@@ -147,6 +149,7 @@ class TalkiesService:
             started_at=started_at,
             path=destination,
             target_window_id=target_window_id,
+            app_name=window_app_name(target_window_id),
         )
         self._last_model_activity = time.monotonic()
         self.warm_model_in_background()
@@ -186,6 +189,7 @@ class TalkiesService:
                 metadata={"error": str(exc)},
                 status="failed",
                 duration_seconds=(datetime.now().astimezone() - active.started_at).total_seconds(),
+                app_name=active.app_name,
             )
             message = f"{exc}. Raw audio was kept at {path}"
             notify("Transcription failed; audio kept", str(path), urgency="critical")
@@ -216,6 +220,7 @@ class TalkiesService:
             status="cancelled" if cancelled else "saved",
             raw_text=raw_text,
             duration_seconds=(datetime.now().astimezone() - active.started_at).total_seconds(),
+            app_name=active.app_name,
         )
         injection_error = None
         if active.mode == "dictation" and text and not cancelled:
@@ -237,7 +242,7 @@ class TalkiesService:
         if not text:
             notify("No speech detected", "Try again and speak closer to the microphone")
         elif cancelled:
-            notify("Dictation cancelled", "Saved in history; use Undo to paste it", urgency="low")
+            notify("Recording cancelled", "Saved in history", urgency="low")
             publish({"status": "cancelled", "detail": "Saved in history"})
         elif active.mode == "dictation" and not injection_error:
             notify("Dictation pasted", f"{len(text.split())} words", urgency="low")
@@ -270,11 +275,14 @@ class TalkiesService:
 
     def undo_cancel(self, transcript_id: int | None = None) -> dict[str, Any]:
         if transcript_id is None:
-            cancelled = self.store.search(limit=1, status="cancelled")
-            item = cancelled[0] if cancelled else None
+            cancelled = self.store.search(limit=100, status="cancelled")
+            item = next(
+                (row for row in cancelled if row["mode"] == "dictation" and row["text"]),
+                None,
+            )
         else:
             item = self.store.get(transcript_id)
-        if not item or item["status"] != "cancelled":
+        if not item or item["status"] != "cancelled" or item["mode"] != "dictation":
             raise ValueError("No cancelled dictation to restore")
         text = str(item["text"])
         if not text:
@@ -282,6 +290,29 @@ class TalkiesService:
         self.injector.inject(text, paste=self.config.behavior.paste)
         self.store.set_status(int(item["id"]), "pasted" if self.config.behavior.paste else "saved")
         return {"ok": True, "transcript_id": item["id"], "text": text}
+
+    def copy_transcript(self, transcript_id: int) -> dict[str, Any]:
+        item = self.store.get(transcript_id)
+        if not item or not str(item["text"]):
+            raise ValueError("Transcript is unavailable or empty")
+        self.injector.inject(str(item["text"]), paste=False)
+        return {"ok": True, "transcript_id": transcript_id, "delivery": "clipboard"}
+
+    def update_replacement(self, phrase: str, replacement: str | None) -> dict[str, Any]:
+        phrase = phrase.strip()
+        if not phrase or len(phrase) > 100 or "\n" in phrase:
+            raise ValueError("Phrase must be 1–100 characters on one line")
+        if replacement is not None and (not replacement.strip() or len(replacement) > 200):
+            raise ValueError("Replacement must be 1–200 characters")
+        values = dict(self.config.replacements)
+        for existing in list(values):
+            if existing.casefold() == phrase.casefold():
+                values.pop(existing)
+        if replacement is not None:
+            values[phrase] = replacement.strip()
+        save_replacements(values)
+        self.config.replacements = values
+        return {"ok": True, "replacements": values}
 
     def handle(self, request: dict[str, Any]) -> dict[str, Any]:
         command = request.get("command")
@@ -310,6 +341,14 @@ class TalkiesService:
                 return self.undo_cancel(
                     int(request["transcript_id"]) if request.get("transcript_id") else None
                 )
+            if command == "paste_transcript":
+                return self.copy_transcript(int(request["transcript_id"]))
+            if command == "set_replacement":
+                return self.update_replacement(
+                    str(request.get("phrase", "")), str(request.get("replacement", ""))
+                )
+            if command == "remove_replacement":
+                return self.update_replacement(str(request.get("phrase", "")), None)
             if command == "toggle":
                 mode = str(request.get("mode", "dictation"))
                 return self.stop() if self.active else self.start(mode)
@@ -330,11 +369,21 @@ class Daemon:
         self.running = True
         self.server: socket.socket | None = None
         self.dashboard: DashboardHandle | None = None
+        self.hotkeys: XInputHotkeyListener | None = None
 
     def _signal(self, _signum: int, _frame: FrameType | None) -> None:
         self.running = False
         if self.server:
             self.server.close()
+
+    def _stop_companions(self) -> None:
+        if self.hotkeys:
+            self.hotkeys.stop()
+            self.hotkeys = None
+        if self.dashboard:
+            self.dashboard.shutdown()
+            self.dashboard = None
+        stop_overlay()
 
     def serve(self) -> None:
         path = socket_path()
@@ -349,6 +398,13 @@ class Daemon:
         self.server.listen(64)
         self.server.settimeout(1)
         start_overlay(lambda action: self.service.handle({"command": action}))
+        x11_session = os.environ.get("XDG_SESSION_TYPE") in {None, "x11"}
+        if self.service.config.behavior.hold_hotkey and x11_session and os.environ.get("DISPLAY"):
+            self.hotkeys = XInputHotkeyListener(
+                lambda action: self.service.handle({"command": action, "mode": "dictation"}),
+                hold_key=self.service.config.behavior.hold_key,
+            )
+            self.hotkeys.start()
         try:
             self.dashboard = start_dashboard(self.service, background=True)
             self.service.dashboard_url = self.dashboard.url
@@ -362,6 +418,7 @@ class Daemon:
                 self.service.prune_audio_if_due()
                 if self.service.should_recycle_model():
                     LOG.info("Recycling idle daemon to release speech model memory")
+                    self._stop_companions()
                     self.server.close()
                     path.unlink(missing_ok=True)
                     os.execv(sys.executable, [sys.executable, "-m", "talkies", "daemon"])
@@ -389,7 +446,5 @@ class Daemon:
                     if response.get("shutdown"):
                         self.running = False
         finally:
-            if self.dashboard:
-                self.dashboard.shutdown()
-            stop_overlay()
+            self._stop_companions()
             path.unlink(missing_ok=True)

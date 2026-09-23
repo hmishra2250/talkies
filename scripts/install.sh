@@ -12,12 +12,14 @@ APT_PACKAGES=(
   libnotify-bin
   pulseaudio-utils
   x11-utils
+  x11-xserver-utils
   xclip
   xdotool
+  xinput
 )
 
 missing_system_command=false
-for command in curl ffmpeg pactl xclip xdotool xprop notify-send; do
+for command in curl ffmpeg pactl xclip xdotool xprop xinput xmodmap notify-send; do
   if ! command -v "$command" >/dev/null 2>&1; then
     missing_system_command=true
     break
@@ -45,7 +47,7 @@ if ! command -v uv >/dev/null 2>&1; then
   export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 fi
 
-for command in uv ffmpeg pactl xclip xdotool xprop systemctl gsettings notify-send; do
+for command in uv ffmpeg pactl xclip xdotool xprop xinput xmodmap systemctl gsettings notify-send; do
   if ! command -v "$command" >/dev/null 2>&1; then
     printf 'Missing required command: %s\n' "$command" >&2
     exit 1

@@ -135,18 +135,21 @@ class TranscriptStore:
         week = now - timedelta(days=7)
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT created_at, text, duration_seconds, mode, status FROM transcripts"
+                "SELECT created_at, text, duration_seconds, mode, status, app_name FROM transcripts"
             ).fetchall()
         words_today = words_week = total_words = 0
         speaking_seconds = speaking_week = 0.0
         by_status: dict[str, int] = {}
         by_mode: dict[str, int] = {}
-        for created, value, duration, mode, status in rows:
+        by_app: dict[str, int] = {}
+        for created, value, duration, mode, status, app_name in rows:
             by_status[status] = by_status.get(status, 0) + 1
             by_mode[mode] = by_mode.get(mode, 0) + 1
             if mode != "dictation" or status == "failed":
                 continue
             words = len(value.split())
+            if app_name:
+                by_app[app_name] = by_app.get(app_name, 0) + words
             stamp = datetime.fromisoformat(created)
             words_today += words if stamp >= today else 0
             words_week += words if stamp >= week else 0
@@ -164,6 +167,7 @@ class TranscriptStore:
             "estimated_minutes_saved": round(max(0, words_week / 40 - speaking_week / 60), 1),
             "by_status": by_status,
             "by_mode": by_mode,
+            "words_by_app": by_app,
             "count": len(rows),
         }
 

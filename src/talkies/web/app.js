@@ -22,7 +22,6 @@ const nodes = {
   editor: document.querySelector("#editor"),
   editState: document.querySelector("#editState"),
   saveButton: document.querySelector("#saveButton"),
-  copyButton: document.querySelector("#copyButton"),
   cancelButton: document.querySelector("#cancelButton"),
   pasteButton: document.querySelector("#pasteButton"),
   modelSetting: document.querySelector("#modelSetting"),
@@ -30,6 +29,8 @@ const nodes = {
   audioSetting: document.querySelector("#audioSetting"),
   breakdown: document.querySelector("#breakdown"),
   dictionary: document.querySelector("#dictionary"),
+  dictionaryForm: document.querySelector("#dictionaryForm"),
+  dictionaryState: document.querySelector("#dictionaryState"),
 };
 
 nodes.refreshButton?.addEventListener("click", () => refresh());
@@ -45,9 +46,16 @@ nodes.statusFilter?.addEventListener("change", () => {
   refreshHistory();
 });
 nodes.saveButton?.addEventListener("click", () => saveCorrection());
-nodes.copyButton?.addEventListener("click", () => copySelected());
-nodes.cancelButton?.addEventListener("click", () => setSelectedStatus("cancelled"));
+nodes.cancelButton?.addEventListener("click", () =>
+  setSelectedStatus(state.selectedItem?.status === "cancelled" ? "saved" : "cancelled"),
+);
 nodes.pasteButton?.addEventListener("click", () => pasteSelected());
+nodes.dictionaryForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const phrase = nodes.dictionaryForm.elements.phrase.value.trim();
+  const replacement = nodes.dictionaryForm.elements.replacement.value.trim();
+  await updateReplacement(phrase, replacement);
+});
 
 refresh();
 
@@ -139,6 +147,11 @@ function renderHistory() {
 
 function renderDetail() {
   const item = state.selectedItem;
+  nodes.cancelButton.disabled = !item;
+  nodes.pasteButton.disabled = !item;
+  nodes.saveButton.disabled = !item;
+  nodes.cancelButton.textContent = item?.status === "cancelled" ? "Restore" : "Mark cancelled";
+  nodes.cancelButton.setAttribute("aria-label", nodes.cancelButton.textContent);
   if (!item) {
     nodes.detailMeta.textContent = "No item selected";
     nodes.detailTitle.textContent = "History";
@@ -201,8 +214,27 @@ function renderDictionary(replacements) {
     phrase.textContent = entry.phrase;
     const replacement = document.createElement("strong");
     replacement.textContent = entry.replacement;
-    row.append(phrase, replacement);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "remove-replacement";
+    remove.textContent = "Remove";
+    remove.setAttribute("aria-label", `Remove ${entry.phrase}`);
+    remove.addEventListener("click", () => updateReplacement(entry.phrase, null));
+    row.append(phrase, replacement, remove);
     nodes.dictionary.append(row);
+  }
+}
+
+async function updateReplacement(phrase, replacement) {
+  try {
+    const response = await sendJson("/api/replacements", "POST", { phrase, replacement });
+    renderDictionary(response.settings.replacements || []);
+    nodes.dictionaryState.textContent = replacement === null ? "Removed" : "Saved";
+    if (replacement !== null) {
+      nodes.dictionaryForm.reset();
+    }
+  } catch (error) {
+    nodes.dictionaryState.textContent = error.message;
   }
 }
 
@@ -223,23 +255,20 @@ async function saveCorrection() {
   }
 }
 
-async function copySelected() {
-  if (!state.selectedItem) {
-    return;
-  }
-  await navigator.clipboard.writeText(nodes.editor.value);
-  nodes.editState.textContent = "Copied";
-}
-
 async function setSelectedStatus(status) {
   if (!state.selectedItem) {
     return;
   }
-  const response = await sendJson(`/api/transcripts/${state.selectedItem.id}/status`, "POST", {
-    status,
-  });
-  updateSelected(response.item);
-  await refreshStats();
+  try {
+    const response = await sendJson(`/api/transcripts/${state.selectedItem.id}/status`, "POST", {
+      status,
+    });
+    updateSelected(response.item);
+    nodes.editState.textContent = status === "cancelled" ? "Marked cancelled" : "Restored";
+    await refreshStats();
+  } catch (error) {
+    nodes.editState.textContent = error.message;
+  }
 }
 
 async function pasteSelected() {
@@ -248,8 +277,7 @@ async function pasteSelected() {
   }
   try {
     await sendJson(`/api/transcripts/${state.selectedItem.id}/paste`, "POST", {});
-    nodes.editState.textContent = "Pasted";
-    await setSelectedStatus("pasted");
+    nodes.editState.textContent = "Copied. Paste in your app.";
   } catch (error) {
     nodes.editState.textContent = error.message;
   }

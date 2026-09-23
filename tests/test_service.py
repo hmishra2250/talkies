@@ -106,6 +106,31 @@ def test_cancel_saves_without_paste_and_undo_restores(tmp_path: Path, monkeypatc
     assert instance.store.get(cancelled["transcript_id"])["status"] == "pasted"
 
 
+def test_dashboard_copy_does_not_claim_paste(tmp_path: Path, monkeypatch) -> None:
+    instance = service(tmp_path, monkeypatch)
+    transcript_id = instance.store.save(
+        mode="dictation", text="remember this", audio_path=None,
+        note_path=None, metadata={}, status="cancelled",
+    )
+    result = instance.handle({"command": "paste_transcript", "transcript_id": transcript_id})
+    assert result["delivery"] == "clipboard"
+    assert instance.injector.value == "remember this"
+    assert instance.store.get(transcript_id)["status"] == "cancelled"
+
+
+def test_dictionary_updates_persist_and_apply_to_dictation(tmp_path: Path, monkeypatch) -> None:
+    instance = service(tmp_path, monkeypatch)
+    result = instance.handle(
+        {"command": "set_replacement", "phrase": "hello", "replacement": "Howdy"}
+    )
+    assert result["ok"] is True
+    assert instance.config.replacements["hello"] == "Howdy"
+    assert "Howdy" in (tmp_path / "config/talkies/config.toml").read_text()
+    instance.handle({"command": "start", "mode": "dictation"})
+    finished = instance.handle({"command": "stop"})
+    assert finished["text"] == "Howdy\nworld"
+
+
 def test_key_repeat_does_not_toggle_recording(tmp_path: Path, monkeypatch) -> None:
     instance = service(tmp_path, monkeypatch)
     started = instance.handle({"command": "toggle", "mode": "dictation", "request_time": 10.0})

@@ -29,6 +29,7 @@ class FakeService:
     def __init__(self, store: TranscriptStore) -> None:
         self.store = store
         self.config = FakeConfig()
+        self.config.replacements = dict(self.config.replacements)
         self.requests: list[dict[str, object]] = []
 
     def status(self) -> dict[str, object]:
@@ -36,6 +37,10 @@ class FakeService:
 
     def handle(self, request: dict[str, object]) -> dict[str, object]:
         self.requests.append(request)
+        if request["command"] == "set_replacement":
+            self.config.replacements[str(request["phrase"])] = str(request["replacement"])
+        if request["command"] == "remove_replacement":
+            self.config.replacements.pop(str(request["phrase"]), None)
         return {"ok": True, "command": request["command"]}
 
 
@@ -152,6 +157,18 @@ def test_dashboard_settings_include_dictionary_and_repaste_uses_service(tmp_path
         assert service.requests == [
             {"command": "paste_transcript", "transcript_id": transcript_id}
         ]
+        added = _send_json(
+            f"{handle.url}api/replacements", "POST",
+            {"phrase": "linux", "replacement": "Linux"},
+        )
+        assert {"phrase": "linux", "replacement": "Linux"} in added["settings"]["replacements"]
+        removed = _send_json(
+            f"{handle.url}api/replacements", "POST",
+            {"phrase": "linux", "replacement": None},
+        )
+        assert {"phrase": "linux", "replacement": "Linux"} not in (
+            removed["settings"]["replacements"]
+        )
     finally:
         handle.shutdown()
 

@@ -1,121 +1,137 @@
 # Talkies
 
-Talkies is a private, local-first dictation and meeting transcription tool for Linux. Audio is
-captured with PipeWire/PulseAudio through `ffmpeg`, transcribed on this laptop with
-[`faster-whisper`](https://github.com/SYSTRAN/faster-whisper), and pasted into the currently
-focused application without sending speech to a cloud service.
+Talkies is a private, local-first dictation and meeting transcription tool for Linux/X11. It
+captures audio with `ffmpeg`, transcribes locally with
+[`faster-whisper`](https://github.com/SYSTRAN/faster-whisper), stores history in SQLite, and pastes
+dictation into the focused X11 application without sending speech to a cloud service.
 
-The first working use case is a two-press global dictation shortcut:
+The main dictation flow is now press-and-hold:
 
-1. Press **Ctrl+Super+Space** and speak.
-2. Press **Ctrl+Super+Space** again.
-3. Talkies transcribes locally and pastes into the window that has focus.
+1. Hold **Right Ctrl** and speak.
+2. Release **Right Ctrl** to transcribe and paste.
+3. Double-tap **Right Ctrl** to lock recording hands-free, then tap **Right Ctrl** again to stop.
 
-It also records voice notes and meetings, including the default speaker/meeting audio.
+The installed GNOME shortcut, **Ctrl+Super+Space**, remains as a fallback toggle: press once to
+start, speak, then press again to stop and paste.
 
-## Why this shape
-
-- **Local-first:** recordings, models, history, and notes stay under your home directory.
-- **Fast without permanent model residency:** model warm-up overlaps recording, then an idle recycle
-  returns native CPU and GPU memory.
-- **Works across X11 apps:** clipboard transfer plus `xdotool` avoids app-specific plugins and
-  selects the terminal paste shortcut for common terminal windows.
-- **Recoverable:** every transcript is stored in a local SQLite history before temporary audio is
-  removed.
-- **Extensible:** dictation, notes, and meetings share one audio/transcription pipeline.
-
-This is an initial personal build, not a claim of complete feature parity with Wispr Flow.
-Wispr-style contextual rewriting and true partial streaming are explicit next steps. The local
-Whisper model determines most raw recognition quality.
-
-## One-command installation
+## Install
 
 On Ubuntu or Debian, clone the repository and run the installer:
 
 ```bash
-git clone git@github.com:hmishra2250/talkies.git && cd talkies && ./install.sh
+git clone https://github.com/hmishra2250/talkies.git && cd talkies && ./install.sh
 ```
 
-For an existing checkout, simply run `./install.sh`. The installer:
+For an existing checkout, run:
 
-1. Installs missing Ubuntu/Debian audio and X11 packages using `apt` when necessary.
+```bash
+./install.sh
+```
+
+The installer:
+
+1. Installs missing Ubuntu/Debian audio and X11 packages with `apt` when necessary.
 2. Installs `uv` when it is missing.
-3. Creates an isolated Talkies tool environment.
-4. Downloads the configured speech model once.
-5. Installs and starts a systemd **user** service.
-6. Registers the GNOME global shortcut and runs diagnostics.
+3. Installs Talkies as an isolated `uv tool`.
+4. Downloads the default `small.en` speech model once.
+5. Installs and starts the `talkies.service` systemd user service.
+6. Registers the GNOME fallback shortcut, then runs `talkies doctor`.
 
-System packages may require your `sudo` password. The Talkies service itself runs entirely as your
-normal user.
-
-The shortcut intentionally avoids **Super+Shift+Space**, which GNOME reserves for switching to
-the previous keyboard input source. Shortcut auto-repeat is debounced, and Talkies reuses one
-transient desktop notification instead of stacking one notification per event.
-
-Talkies runs inference in explicit offline mode, so the daemon does not perform hidden update
-checks. The installer prepares `small.en`; to use a different model, run
-`talkies download-model MODEL` once and then change the config.
+System packages may require your `sudo` password. The Talkies daemon runs as your normal user.
 
 ## Use
 
 ```bash
-talkies toggle          # start/stop dictation; paste into the active window
+talkies toggle          # fallback start/stop dictation toggle
+talkies start           # start dictation
+talkies stop            # stop, transcribe, and paste/save
+talkies cancel          # stop without pasting; keep the transcript in history
+talkies undo            # paste the most recent cancelled dictation
 talkies note            # start/stop a voice note; save Markdown + audio
 talkies meeting         # start/stop mic + default speaker capture
-talkies stop            # stop whichever mode is active
+talkies dashboard       # open the localhost dashboard
 talkies status
 talkies history
 talkies doctor
-talkies download-model distil-large-v3  # the only model command that needs the network
 ```
 
-Meeting transcripts are written to `~/.local/share/talkies/meetings/`; voice notes go to
-`~/.local/share/talkies/notes/`. History is stored at
+The dashboard is served by the daemon on `http://127.0.0.1:8765/`. It shows words today and this
+week, average words per minute, transcript counts, searchable history, retained audio playback,
+status filters, correction editing, clipboard delivery, and an editable replacement dictionary.
+Use `talkies dashboard --no-open` to print the URL without opening a browser.
+
+Voice notes are written to `~/.local/share/talkies/notes/`. Meeting transcripts are written to
+`~/.local/share/talkies/meetings/`. History is stored at
 `~/.local/state/talkies/history.sqlite3`.
 
-## Tune recognition
+## Cancel, undo, and corrections
+
+`talkies cancel` stops the active recording, transcribes it, marks the item as `cancelled`, and
+does not paste it. `talkies undo` restores the last cancelled dictation by pasting it into the
+current target.
+
+Corrections are made in the dashboard: select a history item, edit the text, and save the
+correction. Corrected transcripts with retained audio can become benchmark pairs:
+
+The dashboard's **Copy for paste** action puts saved text on the clipboard; paste it into the
+desired application. **Mark cancelled** and **Restore** change an item's history status. The
+`talkies undo` command directly pastes the most recent cancelled dictation into the focused app.
+
+```bash
+talkies export-benchmark ~/.local/share/talkies/benchmark/manifest.json
+talkies benchmark ~/.local/share/talkies/benchmark/manifest.json --model small.en --output ~/.local/share/talkies/benchmark/report.json
+```
+
+`talkies benchmark` uses already-downloaded models by default. Add `--online` only when you want it
+to download a missing model.
+
+## Configure
 
 Edit `~/.config/talkies/config.toml`, then restart the service:
 
 ```bash
-systemctl --user restart talkies
+systemctl --user restart talkies.service
 ```
 
-Recommended models for the RTX 4070 Laptop GPU:
+Useful defaults:
 
-| Model | Use |
-| --- | --- |
-| `small.en` | Default: quickest English dictation and already cached |
-| `distil-large-v3` | Better English accuracy with good GPU speed |
-| `large-v3-turbo` | Strong multilingual quality |
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `behavior.hold_key` | `"Control_R"` | X11 key name for press-and-hold dictation |
+| `behavior.hold_hotkey` | `true` | Enables the `xinput` hold listener when `DISPLAY` is set |
+| `behavior.keep_dictation_audio` | `true` | Keeps dictation audio for correction, replay, and benchmarks |
+| `behavior.dictation_audio_retention_days` | `14` | Prunes retained dictation audio after 14 days |
+| `transcription.model` | `"small.en"` | Local faster-whisper model |
+| `transcription.beam_size` | `1` | Default dictation decoding beam size |
 
-Set names and product vocabulary in `[replacements]`. Say “new line” or “new paragraph” to
-control layout. Set `behavior.paste = false` for clipboard-only operation.
+Set names and product vocabulary in `[replacements]`. Say "new line" or "new paragraph" to control
+layout. Set `behavior.paste = false` for clipboard-only operation.
 
-### Memory behavior
+To try another model, download it once and then change `transcription.model`:
 
-The control daemon starts without loading Whisper. The model begins warming in the background when
-recording starts, so normal speaking time hides most or all of the cold-load cost. After 60 seconds
-without a recording, Talkies recycles its daemon process to return the model, CUDA context, and VAD
-runtime memory to the operating system. Change `transcription.model_idle_timeout_seconds` to tune
-this tradeoff; use `0` to keep the model warm indefinitely.
+```bash
+talkies download-model distil-large-v3
+```
 
 ## Privacy and files
 
-- Dictation audio is deleted after its transcript is safely written to history by default.
-- Note and meeting audio is retained by default.
+- Dictation, note, and meeting audio stay under `~/.local/share/talkies/`.
+- Dictation audio is retained for 14 days by default, then pruned from history rows.
+- Cancelled dictations are saved in history so they can be undone or corrected.
+- The dashboard only binds to localhost and rejects non-local hosts.
+- Normal inference runs in offline mode after the model is downloaded.
 - No telemetry or cloud API exists in the application.
-- Model download is the only expected network use.
 
 ## Limitations
 
-- The current global injector targets this laptop's **GNOME X11** session. A future Wayland mode
-  should use `ydotool`/uinput because GNOME does not expose the protocol used by `wtype`.
-- Meeting mode mixes the default microphone with the current default sink monitor. Switching the
-  audio output device after recording starts will not switch the capture source.
-- A two-press toggle is used rather than press-and-hold because GNOME custom shortcuts do not
-  expose key-up events.
-- The daemon processes one transcription at a time.
+- Talkies is currently verified for Linux/X11. Wayland, macOS, and mobile are roadmap targets, not
+  supported platforms.
+- The hold key listener uses `xinput test-xi2 --root` and `xmodmap`, so it needs an X11 session.
+- GNOME custom shortcuts do not expose key-up events; use **Ctrl+Super+Space** as a toggle
+  fallback rather than a hold shortcut.
+- Dictation is transcribed after recording stops. True partial streaming is not implemented.
+- Meeting mode captures the default microphone and default sink monitor selected at start time.
+- The daemon processes one stop/transcribe operation at a time.
 
 ## Development
 
@@ -125,4 +141,5 @@ uv run pytest
 uv run ruff check .
 ```
 
-See [`docs/architecture.md`](docs/architecture.md) for component boundaries and the roadmap.
+See [`docs/architecture.md`](docs/architecture.md) for component boundaries and the long-term
+roadmap.

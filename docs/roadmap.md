@@ -38,6 +38,15 @@ must be measured on real devices before becoming defaults.
    explicit local storage controls. Prototype Android and iOS independently; a web dashboard
    alone cannot provide system-wide mobile dictation.
 
+Candidate runtimes to measure are the current
+[faster-whisper](https://github.com/SYSTRAN/faster-whisper),
+[sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) with a compatible
+[Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) export,
+[Moonshine](https://github.com/moonshine-ai/moonshine), and
+[whisper.cpp](https://github.com/ggml-org/whisper.cpp). Their model formats, licenses, device
+support and true resident memory must be checked at integration time. The current benchmark
+command evaluates faster-whisper models only; other engines need adapters before comparison.
+
 ## Release criteria
 
 Run tests and lint, verify actual hold/cancel/undo in the target desktop session, check

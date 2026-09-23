@@ -93,8 +93,10 @@ def doctor() -> int:
         "xdotool": bool(shutil.which("xdotool")),
         "xprop": bool(shutil.which("xprop")),
         "notify-send": bool(shutil.which("notify-send")),
-        "X11 session": os.environ.get("XDG_SESSION_TYPE") == "x11"
-        or bool(os.environ.get("DISPLAY")),
+        "xinput": bool(shutil.which("xinput")) if config.behavior.hold_hotkey else True,
+        "xmodmap": bool(shutil.which("xmodmap")) if config.behavior.hold_hotkey else True,
+        "X11 session": os.environ.get("XDG_SESSION_TYPE") in {None, "x11"}
+        and bool(os.environ.get("DISPLAY")),
     }
     try:
         import faster_whisper  # noqa: F401

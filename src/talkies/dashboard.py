@@ -181,6 +181,22 @@ class _DashboardContext:
             )
         return response
 
+    def update_replacement(self, phrase: str, replacement: str | None) -> dict[str, object]:
+        if not hasattr(self.target, "handle"):
+            raise DashboardError(
+                HTTPStatus.NOT_IMPLEMENTED, "Dictionary editing requires the service"
+            )
+        response = self.target.handle(
+            {
+                "command": "remove_replacement" if replacement is None else "set_replacement",
+                "phrase": phrase,
+                "replacement": replacement,
+            }
+        )
+        if not response.get("ok"):
+            raise DashboardError(HTTPStatus.BAD_REQUEST, str(response.get("error")))
+        return self.settings()
+
     def audio_path(self, transcript_id: int) -> Path:
         item = self.get(transcript_id)
         value = item.get("audio_path")
@@ -245,6 +261,15 @@ class _DashboardRequestHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/shutdown":
                 self._send_json({"ok": True})
                 threading.Thread(target=self.server.shutdown, daemon=True).start()
+                return
+            if parsed.path == "/api/replacements":
+                payload = self._read_json()
+                phrase = str(payload.get("phrase", ""))
+                replacement = payload.get("replacement")
+                if replacement is not None:
+                    replacement = str(replacement)
+                settings = self.server.context.update_replacement(phrase, replacement)
+                self._send_json({"ok": True, "settings": settings})
                 return
             if parsed.path.endswith("/paste"):
                 transcript_id = self._transcript_id(parsed.path.removesuffix("/paste"))

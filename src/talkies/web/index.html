@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Talkies</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23176c5a'/%3E%3Cpath d='M9 10v12m7-16v20m7-16v12' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="/app.css" />
   </head>
   <body>
@@ -13,7 +14,9 @@
           <h1>Talkies</h1>
           <p id="serviceState">Connecting</p>
         </div>
-        <button id="refreshButton" class="icon-button" type="button" title="Refresh">R</button>
+        <button id="refreshButton" class="icon-button" type="button" title="Refresh" aria-label="Refresh">
+          Refresh
+        </button>
       </header>
 
       <section class="metrics" aria-label="Dashboard metrics">
@@ -63,11 +66,24 @@
               <h2 id="detailTitle">History</h2>
             </div>
             <div class="toolbar">
-              <button id="copyButton" class="icon-button" type="button" title="Copy">C</button>
-              <button id="cancelButton" class="icon-button" type="button" title="Mark cancelled">
-                X
+              <button
+                id="cancelButton"
+                class="icon-button"
+                type="button"
+                title="Mark cancelled"
+                aria-label="Mark cancelled"
+              >
+                Mark cancelled
               </button>
-              <button id="pasteButton" class="icon-button" type="button" title="Paste again">P</button>
+              <button
+                id="pasteButton"
+                class="icon-button"
+                type="button"
+                title="Copy for paste"
+                aria-label="Copy for paste"
+              >
+                Copy for paste
+              </button>
             </div>
           </div>
           <audio id="audioPlayer" controls></audio>
@@ -97,6 +113,14 @@
           <h2>Breakdown</h2>
           <div id="breakdown" class="breakdown"></div>
           <h2>Dictionary</h2>
+          <form id="dictionaryForm" class="dictionary-form">
+            <label for="dictionaryPhrase">Spoken phrase</label>
+            <input id="dictionaryPhrase" name="phrase" maxlength="100" required />
+            <label for="dictionaryReplacement">Write as</label>
+            <input id="dictionaryReplacement" name="replacement" maxlength="200" required />
+            <button type="submit">Add replacement</button>
+          </form>
+          <p id="dictionaryState" role="status" aria-live="polite"></p>
           <div id="dictionary" class="dictionary"></div>
         </aside>
       </section>

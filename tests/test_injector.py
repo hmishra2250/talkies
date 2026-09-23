@@ -19,6 +19,14 @@ def test_regular_windows_use_standard_paste_shortcut(monkeypatch) -> None:
     assert injector.active_window_paste_shortcut("10") == "ctrl+v"
 
 
+def test_window_app_name_uses_x11_class(monkeypatch) -> None:
+    monkeypatch.setattr(injector.shutil, "which", lambda _name: "/bin/xprop")
+    monkeypatch.setattr(
+        injector, "_run", lambda _command: result('WM_CLASS(STRING) = "code", "Code"\n')
+    )
+    assert injector.window_app_name("10") == "Code"
+
+
 def test_paste_failure_restores_clipboard(monkeypatch) -> None:
     writes = []
 

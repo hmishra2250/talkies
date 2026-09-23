@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 import subprocess
 import time
@@ -51,6 +52,16 @@ def active_window_id() -> str | None:
     result = _run(["xdotool", "getactivewindow"])
     window_id = result.stdout.strip()
     return window_id if result.returncode == 0 and window_id else None
+
+
+def window_app_name(window_id: str | None) -> str | None:
+    if not window_id or not shutil.which("xprop"):
+        return None
+    result = _run(["xprop", "-id", window_id, "WM_CLASS"])
+    if result.returncode != 0:
+        return None
+    names = re.findall(r'"([^"]+)"', result.stdout)
+    return names[-1] if names else None
 
 
 def active_window_paste_shortcut(window_id: str | None = None) -> str:

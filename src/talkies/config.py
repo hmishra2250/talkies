@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
 import os
+import re
+import stat
+import tempfile
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -79,8 +83,7 @@ sample_rate = 16000
 channels = 1
 
 [transcription]
-# small.en is already fast and accurate on this laptop. For maximum English
-# accuracy, try "distil-large-v3"; for multilingual use "large-v3-turbo".
+# Benchmark other models on corrected recordings before changing the default.
 model = "small.en"
 device = "auto"
 compute_type = "auto"
@@ -144,3 +147,31 @@ def ensure_user_dirs() -> None:
     config_path = config_dir() / "config.toml"
     if not config_path.exists():
         config_path.write_text(DEFAULT_CONFIG, encoding="utf-8")
+
+
+def save_replacements(replacements: dict[str, str], path: Path | None = None) -> None:
+    path = path or config_dir() / "config.toml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    original = path.read_text(encoding="utf-8") if path.exists() else DEFAULT_CONFIG
+    section = re.search(r"(?m)^\[replacements\][ \t]*$", original)
+    lines = "".join(
+        f"{json.dumps(source)} = {json.dumps(target)}\n"
+        for source, target in sorted(replacements.items(), key=lambda pair: pair[0].casefold())
+    )
+    if section:
+        next_section = re.search(r"(?m)^\[[^\n]+\][ \t]*$", original[section.end():])
+        end = section.end() + next_section.start() if next_section else len(original)
+        updated = original[:section.end()] + "\n" + lines + original[end:]
+    else:
+        updated = original.rstrip() + "\n\n[replacements]\n" + lines
+    tomllib.loads(updated)
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=path.parent, prefix=path.name + ".", delete=False
+    ) as handle:
+        handle.write(updated)
+        temporary = Path(handle.name)
+    try:
+        temporary.chmod(stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o600)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
