@@ -25,6 +25,7 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/talkies"]
+include = ["src/talkies/web/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

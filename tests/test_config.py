@@ -20,7 +20,7 @@ paste = false
     )
     config = load_config(path)
     assert config.transcription.model == "distil-large-v3"
-    assert config.transcription.beam_size == 5
+    assert config.transcription.beam_size == 1
     assert config.transcription.offline is True
     assert config.transcription.model_idle_timeout_seconds == 60
     assert config.behavior.paste is False

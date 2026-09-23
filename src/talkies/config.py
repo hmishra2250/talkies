@@ -42,7 +42,7 @@ class TranscriptionConfig:
     device: str = "auto"
     compute_type: str = "auto"
     language: str | None = "en"
-    beam_size: int = 5
+    beam_size: int = 1
     vad_filter: bool = True
     initial_prompt: str = ""
     offline: bool = True
@@ -54,10 +54,13 @@ class BehaviorConfig:
     paste: bool = True
     restore_clipboard: bool = True
     clipboard_restore_delay_ms: int = 350
-    keep_dictation_audio: bool = False
+    keep_dictation_audio: bool = True
+    dictation_audio_retention_days: int = 14
     keep_note_audio: bool = True
     keep_meeting_audio: bool = True
     spoken_commands: bool = True
+    hold_key: str = "Control_R"
+    hold_hotkey: bool = True
 
 
 @dataclass(slots=True)
@@ -82,7 +85,7 @@ model = "small.en"
 device = "auto"
 compute_type = "auto"
 language = "en"
-beam_size = 5
+beam_size = 1
 vad_filter = true
 initial_prompt = ""
 offline = true
@@ -94,10 +97,13 @@ model_idle_timeout_seconds = 60
 paste = true
 restore_clipboard = true
 clipboard_restore_delay_ms = 350
-keep_dictation_audio = false
+keep_dictation_audio = true
+dictation_audio_retention_days = 14
 keep_note_audio = true
 keep_meeting_audio = true
 spoken_commands = true
+hold_key = "Control_R"
+hold_hotkey = true
 
 # Exact, case-insensitive phrase substitutions applied after transcription.
 [replacements]

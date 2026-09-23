@@ -88,7 +88,22 @@ def test_dictation_toggle_records_transcribes_and_injects(tmp_path: Path, monkey
     assert finished["text"] == "hello\nworld"
     assert instance.injector.value == "hello\nworld"
     assert instance.injector.target == "42"
-    assert finished["audio_path"] is None
+    assert finished["audio_path"] is not None
+    assert Path(finished["audio_path"]).exists()
+
+
+def test_cancel_saves_without_paste_and_undo_restores(tmp_path: Path, monkeypatch) -> None:
+    instance = service(tmp_path, monkeypatch)
+    instance.handle({"command": "start", "mode": "dictation"})
+    cancelled = instance.handle({"command": "cancel"})
+    assert cancelled["ok"] is True
+    assert cancelled["status"] == "cancelled"
+    assert instance.injector.value == ""
+    assert instance.store.get(cancelled["transcript_id"])["status"] == "cancelled"
+    restored = instance.handle({"command": "undo"})
+    assert restored["ok"] is True
+    assert instance.injector.value == "hello\nworld"
+    assert instance.store.get(cancelled["transcript_id"])["status"] == "pasted"
 
 
 def test_key_repeat_does_not_toggle_recording(tmp_path: Path, monkeypatch) -> None:

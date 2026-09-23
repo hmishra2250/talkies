@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Talkies</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>Talkies</h1>
+          <p id="serviceState">Connecting</p>
+        </div>
+        <button id="refreshButton" class="icon-button" type="button" title="Refresh">R</button>
+      </header>
+
+      <section class="metrics" aria-label="Dashboard metrics">
+        <article>
+          <span>Today</span>
+          <strong id="wordsToday">0</strong>
+        </article>
+        <article>
+          <span>This week</span>
+          <strong id="wordsWeek">0</strong>
+        </article>
+        <article>
+          <span>Speed</span>
+          <strong id="wpm">-</strong>
+        </article>
+        <article>
+          <span>Items</span>
+          <strong id="transcriptCount">0</strong>
+        </article>
+      </section>
+
+      <section class="workspace">
+        <aside class="history-panel" aria-label="Transcript history">
+          <div class="filters">
+            <label>
+              <span>Search</span>
+              <input id="searchInput" type="search" autocomplete="off" />
+            </label>
+            <label>
+              <span>Status</span>
+              <select id="statusFilter">
+                <option value="">All</option>
+                <option value="pasted">Pasted</option>
+                <option value="saved">Saved</option>
+                <option value="cancelled">Cancelled</option>
+                <option value="failed">Failed</option>
+              </select>
+            </label>
+          </div>
+          <div id="historyList" class="history-list" role="list"></div>
+        </aside>
+
+        <section class="detail-panel" aria-label="Transcript detail">
+          <div class="detail-header">
+            <div>
+              <span id="detailMeta" class="eyebrow">No item selected</span>
+              <h2 id="detailTitle">History</h2>
+            </div>
+            <div class="toolbar">
+              <button id="copyButton" class="icon-button" type="button" title="Copy">C</button>
+              <button id="cancelButton" class="icon-button" type="button" title="Mark cancelled">
+                X
+              </button>
+              <button id="pasteButton" class="icon-button" type="button" title="Paste again">P</button>
+            </div>
+          </div>
+          <audio id="audioPlayer" controls></audio>
+          <textarea id="editor" spellcheck="true"></textarea>
+          <div class="editor-footer">
+            <span id="editState">Ready</span>
+            <button id="saveButton" type="button">Save Correction</button>
+          </div>
+        </section>
+
+        <aside class="settings-panel" aria-label="Settings">
+          <h2>Settings</h2>
+          <dl>
+            <div>
+              <dt>Model</dt>
+              <dd id="modelSetting">-</dd>
+            </div>
+            <div>
+              <dt>Paste</dt>
+              <dd id="pasteSetting">-</dd>
+            </div>
+            <div>
+              <dt>Audio</dt>
+              <dd id="audioSetting">-</dd>
+            </div>
+          </dl>
+          <h2>Breakdown</h2>
+          <div id="breakdown" class="breakdown"></div>
+          <h2>Dictionary</h2>
+          <div id="dictionary" class="dictionary"></div>
+        </aside>
+      </section>
+    </main>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

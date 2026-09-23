@@ -9,6 +9,8 @@ import socket
 import subprocess
 import sys
 import time
+import webbrowser
+from pathlib import Path
 from typing import Any
 
 from . import __version__
@@ -122,6 +124,11 @@ def build_parser() -> argparse.ArgumentParser:
     start = subparsers.add_parser("start", help="begin recording")
     start.add_argument("--mode", choices=["dictation", "note", "meeting"], default="dictation")
     subparsers.add_parser("stop", help="stop, transcribe, and deliver the active recording")
+    subparsers.add_parser("cancel", help="save the active recording without pasting")
+    undo = subparsers.add_parser("undo", help="paste the last cancelled dictation")
+    undo.add_argument("transcript_id", nargs="?", type=int)
+    dashboard = subparsers.add_parser("dashboard", help="open the local dashboard")
+    dashboard.add_argument("--no-open", action="store_true", help="print the local URL only")
     subparsers.add_parser("status", help="show daemon and recording state")
     history = subparsers.add_parser("history", help="show recent local transcripts")
     history.add_argument("--limit", type=int, default=10)
@@ -133,6 +140,19 @@ def build_parser() -> argparse.ArgumentParser:
         "download-model", help="explicitly download a speech model for offline use"
     )
     download.add_argument("model", nargs="?", default=None)
+    benchmark = subparsers.add_parser("benchmark", help="compare local models on corrected audio")
+    benchmark.add_argument("manifest", type=Path)
+    benchmark.add_argument("--model", action="append", dest="models")
+    benchmark.add_argument("--output", type=Path)
+    benchmark.add_argument("--device")
+    benchmark.add_argument("--compute-type")
+    benchmark.add_argument("--language")
+    benchmark.add_argument("--beam-size", type=int)
+    benchmark.add_argument("--online", action="store_true", help="allow model download")
+    export = subparsers.add_parser(
+        "export-benchmark", help="write a manifest of corrected transcripts with retained audio"
+    )
+    export.add_argument("output", type=Path)
     subparsers.add_parser("doctor", help="check local dependencies")
     subparsers.add_parser("daemon", help=argparse.SUPPRESS)
     return parser
@@ -167,6 +187,55 @@ def main(argv: list[str] | None = None) -> int:
             path = download_model(model)
         print(f"Ready: {path}")
         return 0
+    if args.command == "dashboard":
+        response = send_request({"command": "status"})
+        if not response.get("ok"):
+            return print_response(response)
+        url = response.get("dashboard_url") or "http://127.0.0.1:8765/"
+        print(url)
+        if not args.no_open:
+            webbrowser.open(str(url))
+        return 0
+    if args.command == "benchmark":
+        from .benchmark import (
+            BenchmarkOptions,
+            benchmark_to_json,
+            load_pairs,
+            run_benchmark,
+            write_report,
+        )
+
+        config = load_config().transcription
+        options = BenchmarkOptions(
+            device=args.device or config.device,
+            compute_type=args.compute_type or config.compute_type,
+            language=args.language or config.language,
+            beam_size=args.beam_size if args.beam_size is not None else config.beam_size,
+            vad_filter=config.vad_filter,
+            initial_prompt=config.initial_prompt,
+            offline=not args.online,
+        )
+        try:
+            report = run_benchmark(
+                load_pairs(args.manifest),
+                args.models or [config.model],
+                options,
+            )
+        except (OSError, ValueError, RuntimeError) as exc:
+            print(f"talkies: benchmark failed: {exc}", file=sys.stderr)
+            return 1
+        if args.output:
+            write_report(report, args.output)
+            print(args.output)
+        else:
+            print(benchmark_to_json(report), end="")
+        return 0
+    if args.command == "export-benchmark":
+        pairs = TranscriptStore().corrected_pairs()
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(pairs, indent=2) + "\n", encoding="utf-8")
+        print(f"Wrote {len(pairs)} corrected pairs to {args.output}")
+        return 0
     if args.command == "history":
         for item in TranscriptStore().recent(max(1, min(args.limit, 100))):
             preview = str(item["text"]).replace("\n", " ")[:100]
@@ -179,6 +248,8 @@ def main(argv: list[str] | None = None) -> int:
         request = {"command": "toggle", "mode": args.command}
     elif args.command == "start":
         request = {"command": "start", "mode": args.mode}
+    elif args.command == "undo":
+        request = {"command": "undo", "transcript_id": args.transcript_id}
     else:
         request = {"command": args.command}
     return print_response(send_request(request), quiet=False)
