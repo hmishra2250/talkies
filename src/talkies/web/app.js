@@ -335,6 +335,9 @@ function renderTranscriptCard(item) {
   if (editing) {
     actions.append(actionButton("discard", "Discard"));
   }
+  if (item.status === "failed" && item.audio_path) {
+    actions.prepend(actionButton("retry", "Retry transcription"));
+  }
   header.append(meta, actions);
 
   const body = document.createElement("div");
@@ -414,7 +417,9 @@ async function handleHistoryClick(event) {
   if (!item) {
     return;
   }
-  if (button.dataset.action === "copy") {
+  if (button.dataset.action === "retry") {
+    await retrySelected(item);
+  } else if (button.dataset.action === "copy") {
     await pasteSelected(item);
   } else if (button.dataset.action === "status") {
     await setSelectedStatus(item, item.status === "cancelled" ? "saved" : "cancelled");
@@ -530,6 +535,24 @@ async function setSelectedStatus(item, status) {
       status,
     });
     state.messages.set(response.item.id, status === "cancelled" ? "Marked cancelled" : "Restored");
+    updateSelected(response.item);
+    await refreshStats();
+  } catch (error) {
+    state.messages.set(item.id, error.message);
+    renderHistory();
+  }
+}
+
+async function retrySelected(item) {
+  state.messages.set(item.id, "Transcribing. Long recordings can take a minute.");
+  renderHistory();
+  try {
+    const response = await sendJson(`/api/transcripts/${item.id}/retry`, "POST", {});
+    const words = response.item.words || 0;
+    state.messages.set(
+      response.item.id,
+      words ? `Transcribed ${words} words. Use Copy to paste it.` : "No speech detected",
+    );
     updateSelected(response.item);
     await refreshStats();
   } catch (error) {

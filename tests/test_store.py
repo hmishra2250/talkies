@@ -179,3 +179,28 @@ def test_write_note_creates_markdown(tmp_path: Path, monkeypatch) -> None:
     path = write_note("note", "remember this", None, datetime.now().astimezone())
     assert path.parent == tmp_path / "talkies" / "notes"
     assert "remember this" in path.read_text(encoding="utf-8")
+
+
+def test_recover_orphaned_audio_skips_known_and_empty_recordings(tmp_path: Path) -> None:
+    store = TranscriptStore(tmp_path / "history.sqlite3")
+    recordings = tmp_path / "recordings"
+    recordings.mkdir()
+    known = recordings / "2026-09-30_20-48-09-292315-dictation.wav"
+    known.write_bytes(b"RIFF" + b"0" * 100)
+    store.save(
+        mode="dictation", text="done", audio_path=known, note_path=None, metadata={}
+    )
+    (recordings / "2026-09-30_20-50-00-000000-dictation.wav").write_bytes(b"RIFF")
+    lost = recordings / "2026-08-28_18-07-02-789426-note.wav"
+    lost.write_bytes(b"RIFF" + b"0" * 100)
+
+    recovered = store.recover_orphaned_audio(recordings)
+
+    assert len(recovered) == 1
+    item = store.get(recovered[0])
+    assert item["audio_path"] == str(lost)
+    assert item["mode"] == "note"
+    assert item["status"] == "failed"
+    assert item["created_at"].startswith("2026-08-28T18:07:02")
+    assert store.recover_orphaned_audio(recordings) == []
+    assert store.recover_orphaned_audio(tmp_path / "missing") == []

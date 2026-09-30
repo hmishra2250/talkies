@@ -317,3 +317,26 @@ def _send_json(
     )
     with urlopen(request, timeout=2) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def test_dashboard_retry_routes_to_service_and_returns_item(tmp_path: Path) -> None:
+    store = TranscriptStore(tmp_path / "history.sqlite3")
+    transcript_id = store.save(
+        mode="dictation",
+        text="",
+        audio_path=tmp_path / "lost.wav",
+        note_path=None,
+        metadata={"error": "Transcription was interrupted; audio recovered"},
+        status="failed",
+    )
+    service = FakeService(store)
+    handle = start_dashboard(service, port=0)
+    try:
+        response = _send_json(f"{handle.url}api/transcripts/{transcript_id}/retry", "POST", {})
+        assert response["ok"] is True
+        assert response["item"]["id"] == transcript_id
+        assert service.requests == [
+            {"command": "retry_transcript", "transcript_id": transcript_id}
+        ]
+    finally:
+        handle.shutdown()

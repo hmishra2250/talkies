@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+import wave
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -10,6 +11,8 @@ from .config import data_dir, state_dir
 
 MIN_WPM_SAMPLE_SECONDS = 1.0
 MAX_PLAUSIBLE_WPM = 350
+RECORDING_MODES = {"dictation", "note", "meeting"}
+EMPTY_WAV_BYTES = 44
 
 
 class TranscriptStore:
@@ -60,9 +63,11 @@ class TranscriptStore:
         raw_text: str | None = None,
         duration_seconds: float | None = None,
         app_name: str | None = None,
+        created_at: datetime | None = None,
     ) -> int:
         if status not in {"saved", "pasted", "cancelled", "failed"}:
             raise ValueError(f"Unknown transcript status: {status}")
+        created = created_at or datetime.now().astimezone()
         with self._connect() as connection:
             cursor = connection.execute(
                 """INSERT INTO transcripts
@@ -70,7 +75,7 @@ class TranscriptStore:
                     status, raw_text, duration_seconds, app_name)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    datetime.now().astimezone().isoformat(timespec="seconds"),
+                    created.isoformat(timespec="seconds"),
                     mode,
                     text,
                     str(audio_path) if audio_path else None,
@@ -140,6 +145,70 @@ class TranscriptStore:
                 "UPDATE transcripts SET status = ? WHERE id = ?", (status, transcript_id)
             )
         return self.get(transcript_id) if result.rowcount else None
+
+    def update_transcription(
+        self,
+        transcript_id: int,
+        *,
+        text: str,
+        raw_text: str,
+        metadata: dict[str, object],
+        status: str,
+        note_path: Path | None,
+    ) -> dict[str, object] | None:
+        if status not in {"saved", "pasted", "cancelled", "failed"}:
+            raise ValueError(f"Unknown transcript status: {status}")
+        with self._connect() as connection:
+            result = connection.execute(
+                """UPDATE transcripts
+                   SET text = ?, raw_text = ?, metadata_json = ?, status = ?,
+                       note_path = COALESCE(?, note_path), edited_at = NULL
+                   WHERE id = ?""",
+                (
+                    text,
+                    raw_text,
+                    json.dumps(metadata, sort_keys=True),
+                    status,
+                    str(note_path) if note_path else None,
+                    transcript_id,
+                ),
+            )
+        return self.get(transcript_id) if result.rowcount else None
+
+    def recover_orphaned_audio(self, recordings: Path) -> list[int]:
+        """Add history rows for recordings whose transcription never finished.
+
+        A crash or restart during transcription leaves the WAV on disk with no row,
+        which hides it from the dashboard. Recovered rows are marked failed so they
+        can be retried.
+        """
+        if not recordings.is_dir():
+            return []
+        with self._connect() as connection:
+            known = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT audio_path FROM transcripts WHERE audio_path IS NOT NULL"
+                )
+            }
+        recovered: list[int] = []
+        for path in sorted(recordings.glob("*.wav")):
+            if str(path) in known or path.stat().st_size <= EMPTY_WAV_BYTES:
+                continue
+            created_at, mode = _recording_identity(path)
+            recovered.append(
+                self.save(
+                    mode=mode,
+                    text="",
+                    audio_path=path,
+                    note_path=None,
+                    metadata={"error": "Transcription was interrupted; audio recovered"},
+                    status="failed",
+                    duration_seconds=_wav_seconds(path),
+                    created_at=created_at,
+                )
+            )
+        return recovered
 
     def stats(self) -> dict[str, object]:
         now = datetime.now().astimezone()
@@ -220,6 +289,23 @@ class TranscriptStore:
             for audio_path, text in rows
             if Path(audio_path).is_file() and text.strip()
         ]
+
+
+def _recording_identity(path: Path) -> tuple[datetime, str]:
+    stamp, _, mode = path.stem.rpartition("-")
+    try:
+        created_at = datetime.strptime(stamp, "%Y-%m-%d_%H-%M-%S-%f").astimezone()
+    except ValueError:
+        created_at = datetime.fromtimestamp(path.stat().st_mtime).astimezone()
+    return created_at, mode if mode in RECORDING_MODES else "dictation"
+
+
+def _wav_seconds(path: Path) -> float | None:
+    try:
+        with wave.open(str(path)) as audio:
+            return audio.getnframes() / audio.getframerate()
+    except (wave.Error, EOFError, OSError, ZeroDivisionError):
+        return None
 
 
 def _valid_wpm_duration(value: object, word_count: int) -> float | None:

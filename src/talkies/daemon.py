@@ -90,6 +90,9 @@ class TalkiesService:
         )
         self.store = TranscriptStore()
         self.store.prune_audio(self.config.behavior.dictation_audio_retention_days)
+        recovered = self.store.recover_orphaned_audio(data_dir() / "recordings")
+        if recovered:
+            LOG.warning("Recovered %d untranscribed recording(s) into history", len(recovered))
         self._last_audio_prune = time.monotonic()
         self.active: ActiveRecording | None = None
         self._operation_lock = threading.Lock()
@@ -120,6 +123,10 @@ class TalkiesService:
     def should_recycle_model(self, now: float | None = None) -> bool:
         timeout = self.config.transcription.model_idle_timeout_seconds
         if timeout <= 0 or self.active or not self.transcriber.loaded:
+            return False
+        # stop() clears self.active before transcribing, so an in-flight request is
+        # the only signal that recycling now would kill a transcription mid-way.
+        if self._operation_lock.locked():
             return False
         current_time = now if now is not None else time.monotonic()
         return current_time - self._last_model_activity >= timeout
@@ -287,6 +294,46 @@ class TalkiesService:
             ),
         }
 
+    def retry_transcript(self, transcript_id: int) -> dict[str, Any]:
+        item = self.store.get(transcript_id)
+        if not item:
+            raise RuntimeError("Transcript not found")
+        path = Path(str(item["audio_path"])) if item.get("audio_path") else None
+        if path is None or not path.is_file():
+            raise RuntimeError("The audio for this transcript is no longer available")
+        publish({"status": "transcribing", "detail": self.config.transcription.model})
+        try:
+            raw_text, metadata = self.transcriber.transcribe(path)
+        except Exception:
+            publish({"status": "ready", "message": "Transcription failed", "detail": "Audio saved"})
+            raise
+        finally:
+            self._last_model_activity = time.monotonic()
+        text = normalize_text(
+            raw_text,
+            replacements=self.config.replacements,
+            spoken_commands=self.config.behavior.spoken_commands,
+        )
+        mode = str(item["mode"])
+        note_path = None
+        if mode in {"note", "meeting"} and text:
+            started_at = datetime.fromisoformat(str(item["created_at"]))
+            note_path = write_note(mode, text, path, started_at)
+        updated = self.store.update_transcription(
+            transcript_id,
+            text=text,
+            raw_text=raw_text,
+            metadata={**metadata, "retried": True},
+            status="saved" if text else "failed",
+            note_path=note_path,
+        )
+        if text:
+            words = len(text.split())
+            publish({"status": "ready", "message": "Transcribed", "detail": f"{words} words"})
+        else:
+            publish({"status": "ready", "message": "No speech detected", "detail": "Audio saved"})
+        return {"ok": True, "transcript_id": transcript_id, "text": text, "item": updated}
+
     def undo_cancel(self, transcript_id: int | None = None) -> dict[str, Any]:
         if transcript_id is None:
             cancelled = self.store.search(limit=100, status="cancelled")
@@ -400,6 +447,8 @@ class TalkiesService:
                 return self.undo_cancel(
                     int(request["transcript_id"]) if request.get("transcript_id") else None
                 )
+            if command == "retry_transcript":
+                return self.retry_transcript(int(request["transcript_id"]))
             if command == "paste_transcript":
                 return self.copy_transcript(int(request["transcript_id"]))
             if command == "set_replacement":

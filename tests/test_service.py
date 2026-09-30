@@ -247,3 +247,76 @@ def test_no_speech_recording_closes_listening_overlay(tmp_path: Path, monkeypatc
     assert finished["text"] == ""
     assert instance.status()["state"] == "idle"
     assert states[-1] == {"status": "ready", "message": "No speech detected", "detail": "Try again"}
+
+
+def _write_wav(path: Path, seconds: float = 1.0) -> None:
+    import wave
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "wb") as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(16000)
+        audio.writeframes(b"\0\0" * int(16000 * seconds))
+
+
+def test_model_is_not_recycled_while_a_long_recording_transcribes(
+    tmp_path: Path, monkeypatch
+) -> None:
+    instance = service(tmp_path, monkeypatch)
+    instance.config.transcription.model_idle_timeout_seconds = 60
+    recycle_checks: list[bool] = []
+
+    class WatchedTranscriber(FakeTranscriber):
+        def transcribe(self, path: Path):
+            # The recording outlasted the idle timeout before transcription began.
+            recycle_checks.append(instance.should_recycle_model(now=10**9))
+            return super().transcribe(path)
+
+    instance.transcriber = WatchedTranscriber()
+    instance.handle({"command": "start", "mode": "dictation"})
+    finished = instance.handle({"command": "stop"})
+    assert recycle_checks == [False]
+    assert finished["text"] == "hello\nworld"
+
+
+def test_startup_recovers_interrupted_audio_and_retry_transcribes_it(
+    tmp_path: Path, monkeypatch
+) -> None:
+    service(tmp_path, monkeypatch)
+    recording = tmp_path / "data" / "talkies" / "recordings"
+    lost = recording / "2026-09-30_20-49-29-000082-dictation.wav"
+    _write_wav(lost, seconds=2)
+    (recording / "2026-09-30_20-50-00-000000-dictation.wav").write_bytes(b"")
+
+    instance = TalkiesService(Config())
+    instance.transcriber = FakeTranscriber()
+    failed = instance.store.search(status="failed")
+    assert [item["audio_path"] for item in failed] == [str(lost)]
+    assert failed[0]["created_at"].startswith("2026-09-30T20:49:29")
+    assert failed[0]["duration_seconds"] == 2
+
+    retried = instance.handle({"command": "retry_transcript", "transcript_id": failed[0]["id"]})
+    assert retried["ok"] is True
+    item = instance.store.get(int(failed[0]["id"]))
+    assert item["status"] == "saved"
+    assert item["text"] == "hello\nworld"
+    assert lost.exists()
+
+    again = TalkiesService(Config())
+    assert again.store.search(status="failed") == []
+
+
+def test_retry_reports_missing_audio(tmp_path: Path, monkeypatch) -> None:
+    instance = service(tmp_path, monkeypatch)
+    transcript_id = instance.store.save(
+        mode="dictation",
+        text="",
+        audio_path=tmp_path / "gone.wav",
+        note_path=None,
+        metadata={},
+        status="failed",
+    )
+    response = instance.handle({"command": "retry_transcript", "transcript_id": transcript_id})
+    assert response["ok"] is False
+    assert "no longer available" in response["error"]

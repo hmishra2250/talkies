@@ -227,6 +227,24 @@ class _DashboardContext:
             )
         return response
 
+    def retry(self, transcript_id: int) -> dict[str, object]:
+        if not hasattr(self.target, "handle"):
+            raise DashboardError(HTTPStatus.NOT_IMPLEMENTED, "Retry requires the Talkies service")
+        response = self.target.handle(
+            {"command": "retry_transcript", "transcript_id": transcript_id}
+        )
+        if not isinstance(response, dict):
+            raise DashboardError(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                "Retry command returned invalid data",
+            )
+        if not response.get("ok"):
+            raise DashboardError(
+                HTTPStatus.CONFLICT,
+                str(response.get("error", "Retry failed")),
+            )
+        return self.get(transcript_id)
+
     def update_replacement(self, phrase: str, replacement: str | None) -> dict[str, object]:
         if not hasattr(self.target, "handle"):
             raise DashboardError(
@@ -319,6 +337,10 @@ class _DashboardRequestHandler(BaseHTTPRequestHandler):
                     replacement = str(replacement)
                 settings = self.server.context.update_replacement(phrase, replacement)
                 self._send_json({"ok": True, "settings": settings})
+                return
+            if parsed.path.endswith("/retry"):
+                transcript_id = self._transcript_id(parsed.path.removesuffix("/retry"))
+                self._send_json({"ok": True, "item": self.server.context.retry(transcript_id)})
                 return
             if parsed.path.endswith("/paste"):
                 transcript_id = self._transcript_id(parsed.path.removesuffix("/paste"))
