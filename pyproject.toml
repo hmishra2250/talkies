@@ -12,6 +12,8 @@ license = { text = "MIT" }
 authors = [{ name = "Himadri" }]
 dependencies = [
   "faster-whisper>=1.1.1,<2",
+  # PyAV 19 removed the metadata_errors argument faster-whisper passes to av.open().
+  "av<19",
 ]
 
 [project.scripts]

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ast
-import os
 import shlex
 import subprocess
 import sys
@@ -18,9 +17,13 @@ def _run(command: list[str], *, check: bool = True) -> subprocess.CompletedProce
 
 def _service_text() -> str:
     executable = f"{shlex.quote(sys.executable)} -m talkies daemon"
-    display = os.environ.get("DISPLAY", ":0")
+    # Start with the desktop session rather than default.target: by the time
+    # graphical-session.target is reached, GNOME has imported DISPLAY and
+    # XAUTHORITY into the user manager. Starting earlier left the hotkey
+    # listener and overlay unable to authenticate with X after a reboot.
     return f"""[Unit]
 Description=Talkies local speech service
+PartOf=graphical-session.target
 After=graphical-session.target pipewire.service
 
 [Service]
@@ -28,10 +31,9 @@ Type=simple
 ExecStart={executable}
 Restart=on-failure
 RestartSec=2
-Environment=DISPLAY={display}
 
 [Install]
-WantedBy=default.target
+WantedBy=graphical-session.target
 """
 
 
@@ -41,7 +43,8 @@ def install_service() -> Path:
     service_path.parent.mkdir(parents=True, exist_ok=True)
     service_path.write_text(_service_text(), encoding="utf-8")
     _run(["systemctl", "--user", "daemon-reload"])
-    _run(["systemctl", "--user", "enable", "talkies.service"])
+    # reenable drops links left by older units that were wanted by default.target.
+    _run(["systemctl", "--user", "reenable", "talkies.service"])
     _run(["systemctl", "--user", "restart", "talkies.service"])
     return service_path
 
