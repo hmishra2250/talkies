@@ -142,7 +142,7 @@ class _DashboardContext:
                 HTTPStatus.INTERNAL_SERVER_ERROR,
                 "Store stats returned invalid data",
             )
-        return _normalise_stats(stats)
+        return stats
 
     def service_status(self) -> dict[str, object]:
         if hasattr(self.target, "status"):
@@ -560,27 +560,6 @@ def _duration_seconds(row: dict[str, object], metadata: dict[str, object]) -> fl
 
 def _word_count(text: str) -> int:
     return len([word for word in text.split() if word.strip()])
-
-
-def _normalise_stats(stats: dict[str, object]) -> dict[str, object]:
-    normalised = dict(stats)
-    if "words_per_minute" not in normalised and "average_wpm" in normalised:
-        normalised["words_per_minute"] = normalised["average_wpm"]
-    if "estimated_minutes_saved" not in normalised:
-        words_week = _number(normalised.get("words_week"))
-        normalised["estimated_minutes_saved"] = round(words_week / 40, 1)
-    if "by_status" not in normalised:
-        normalised["by_status"] = {}
-    if "by_mode" not in normalised:
-        normalised["by_mode"] = {}
-    return normalised
-
-
-def _number(value: object) -> float:
-    try:
-        return float(value or 0)
-    except (TypeError, ValueError):
-        return 0.0
 
 
 def _is_local_host(value: str) -> bool:

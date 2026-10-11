@@ -216,23 +216,17 @@ class TranscriptStore:
         week = now - timedelta(days=7)
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT created_at, text, duration_seconds, mode, status, app_name FROM transcripts"
+                "SELECT created_at, text, duration_seconds, mode, status FROM transcripts"
             ).fetchall()
         words_today = words_week = total_words = 0
         wpm_words = 0
-        wpm_week_words = 0
-        speaking_seconds = speaking_week = 0.0
+        speaking_seconds = 0.0
         by_status: dict[str, int] = {}
-        by_mode: dict[str, int] = {}
-        by_app: dict[str, int] = {}
-        for created, value, duration, mode, status, app_name in rows:
+        for created, value, duration, mode, status in rows:
             by_status[status] = by_status.get(status, 0) + 1
-            by_mode[mode] = by_mode.get(mode, 0) + 1
             if mode != "dictation" or status == "failed":
                 continue
             words = len(value.split())
-            if app_name:
-                by_app[app_name] = by_app.get(app_name, 0) + words
             stamp = datetime.fromisoformat(created)
             words_today += words if stamp >= today else 0
             words_week += words if stamp >= week else 0
@@ -242,9 +236,6 @@ class TranscriptStore:
                 continue
             wpm_words += words
             speaking_seconds += valid_duration
-            if stamp >= week:
-                wpm_week_words += words
-                speaking_week += valid_duration
         average_wpm = round(wpm_words * 60 / speaking_seconds) if speaking_seconds else 0
         return {
             "words_today": words_today,
@@ -253,10 +244,7 @@ class TranscriptStore:
             "average_wpm": average_wpm,
             "words_per_minute": average_wpm,
             "total_words": total_words,
-            "estimated_minutes_saved": round(max(0, wpm_week_words / 40 - speaking_week / 60), 1),
             "by_status": by_status,
-            "by_mode": by_mode,
-            "words_by_app": by_app,
             "count": len(rows),
         }
 
