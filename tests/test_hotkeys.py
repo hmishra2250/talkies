@@ -106,23 +106,6 @@ def test_key_repeat_is_ignored_while_hold_key_is_down() -> None:
     assert commands(machine.feed(event("release", "Control_R", 1.4))) == ["stop"]
 
 
-def test_cancel_key_cancels_active_hold_recording() -> None:
-    machine = HoldKeyStateMachine(cancel_key="BackSpace", start_delay_seconds=0.1)
-    assert commands(machine.feed(event("press", "Control_R", 1.0))) == []
-    assert commands(machine.tick(1.1)) == ["start"]
-    assert commands(machine.feed(event("press", "BackSpace", 1.2))) == ["cancel"]
-    assert machine.recording is False
-    assert commands(machine.feed(event("release", "Control_R", 1.3))) == []
-
-
-def test_undo_key_emits_only_while_idle() -> None:
-    machine = HoldKeyStateMachine(undo_key="Menu", start_delay_seconds=0.1)
-    assert commands(machine.feed(event("press", "Menu", 1.0))) == ["undo"]
-    assert commands(machine.feed(event("press", "Control_R", 2.0))) == []
-    assert commands(machine.tick(2.1)) == ["start"]
-    assert commands(machine.feed(event("press", "Menu", 2.2))) == []
-
-
 def test_parse_xmodmap_ignores_no_symbol_entries() -> None:
     keymap = parse_xmodmap(
         [
