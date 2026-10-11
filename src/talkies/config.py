@@ -149,6 +149,21 @@ def ensure_user_dirs() -> None:
         config_path.write_text(DEFAULT_CONFIG, encoding="utf-8")
 
 
+def _atomic_write_toml(path: Path, content: str) -> None:
+    """Validate TOML, then replace the file atomically, keeping its permissions."""
+    tomllib.loads(content)
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=path.parent, prefix=path.name + ".", delete=False
+    ) as handle:
+        handle.write(content)
+        temporary = Path(handle.name)
+    try:
+        temporary.chmod(stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o600)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def save_replacements(replacements: dict[str, str], path: Path | None = None) -> None:
     path = path or config_dir() / "config.toml"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -164,17 +179,7 @@ def save_replacements(replacements: dict[str, str], path: Path | None = None) ->
         updated = original[:section.end()] + "\n" + lines + original[end:]
     else:
         updated = original.rstrip() + "\n\n[replacements]\n" + lines
-    tomllib.loads(updated)
-    with tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", dir=path.parent, prefix=path.name + ".", delete=False
-    ) as handle:
-        handle.write(updated)
-        temporary = Path(handle.name)
-    try:
-        temporary.chmod(stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o600)
-        os.replace(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
+    _atomic_write_toml(path, updated)
 
 
 def save_hold_key(binding: str, path: Path | None = None) -> None:
@@ -196,14 +201,4 @@ def save_hold_key(binding: str, path: Path | None = None) -> None:
         updated = original[:section.end()] + body + original[end:]
     else:
         updated = original.rstrip() + "\n\n[behavior]\n" + setting
-    tomllib.loads(updated)
-    with tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", dir=path.parent, prefix=path.name + ".", delete=False
-    ) as handle:
-        handle.write(updated)
-        temporary = Path(handle.name)
-    try:
-        temporary.chmod(stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o600)
-        os.replace(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
+    _atomic_write_toml(path, updated)
