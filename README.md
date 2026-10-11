@@ -150,6 +150,22 @@ talkies download-model distil-large-v3
 - Normal inference runs in offline mode after the model is downloaded.
 - No telemetry or cloud API exists in the application.
 
+## Privacy
+
+Talkies is built for a computer that only you log in to. Three things to know:
+
+- **The dashboard has no login.** Any program or user account on the same computer can open
+  `http://127.0.0.1:8765/`, read every transcript, play retained audio, and stop the service. Run
+  Talkies only on a computer where you are the only user.
+- **The data folders are not locked down.** Audio, notes, meeting transcripts, and the history
+  database are created with your default file permissions, so other accounts may be able to read
+  them; only the control socket is always private to your account. Restrict the folders yourself:
+  `chmod 700 ~/.local/share/talkies ~/.local/state/talkies ~/.config/talkies`.
+- **Note and meeting audio is never pruned.** The 14-day retention applies only to dictation audio.
+  To keep only the text, set `behavior.keep_note_audio = false` and
+  `behavior.keep_meeting_audio = false`, or delete old files from `~/.local/share/talkies/`
+  yourself. Meeting mode records other people's voices, so ask for their consent first.
+
 ## Limitations
 
 - Talkies is currently verified for Linux/X11. Wayland, macOS, and mobile are roadmap targets, not
