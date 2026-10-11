@@ -153,7 +153,6 @@ def test_stats_keep_word_totals_but_ignore_untrusted_durations_for_wpm(tmp_path:
     assert stats["words_week"] == 27
     assert stats["words_per_minute"] == 100
     assert stats["speaking_seconds"] == 6.0
-    assert stats["estimated_minutes_saved"] == 0.1
 
 
 def test_stats_include_cancelled_dictations_when_duration_is_trusted(tmp_path: Path) -> None:

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "talkies-local"
 version = "0.1.0"
-description = "Fast, private, local-first dictation and meeting transcription for Linux"
+description = "Dictation for Linux: hold a key, speak, and the text is pasted at your cursor. Speech is transcribed on your own machine."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

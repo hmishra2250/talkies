@@ -170,16 +170,12 @@ class HoldKeyStateMachine:
         double_tap_seconds: float = DEFAULT_DOUBLE_TAP_SECONDS,
         start_delay_seconds: float = DEFAULT_START_DELAY_SECONDS,
         tap_max_seconds: float = DEFAULT_TAP_MAX_SECONDS,
-        cancel_key: str | None = None,
-        undo_key: str | None = None,
     ) -> None:
         self.hold_key = normalize_binding(hold_key)
         self._binding = parse_binding(hold_key)
         self.double_tap_seconds = double_tap_seconds
         self.start_delay_seconds = start_delay_seconds
         self.tap_max_seconds = tap_max_seconds
-        self.cancel_key = cancel_key
-        self.undo_key = undo_key
         self._binding_down_parts: set[str] = set()
         self._hold_down = False
         self._pending_start = False
@@ -240,11 +236,6 @@ class HoldKeyStateMachine:
             self._pending_start = False
         if self._binding.value == event.key:
             return self._press_hold(event.when)
-        if self.cancel_key and event.key == self.cancel_key and self.recording:
-            self._reset_recording()
-            return [HotkeyAction("cancel", event.when)]
-        if self.undo_key and event.key == self.undo_key and not self.recording:
-            return [HotkeyAction("undo", event.when)]
         return []
 
     def _press_hold(self, when: float) -> list[HotkeyAction]:
@@ -326,8 +317,6 @@ class XInputHotkeyListener:
         callback: HotkeyCallback,
         *,
         hold_key: str = DEFAULT_HOLD_KEY,
-        cancel_key: str | None = None,
-        undo_key: str | None = None,
         xinput_command: tuple[str, ...] = ("xinput", "test-xi2", "--root"),
         poll_seconds: float = 0.02,
         capture_modifier_debounce_seconds: float = DEFAULT_CAPTURE_MODIFIER_DEBOUNCE_SECONDS,
@@ -337,13 +326,7 @@ class XInputHotkeyListener:
         self.xinput_command = xinput_command
         self.poll_seconds = poll_seconds
         self.capture_modifier_debounce_seconds = capture_modifier_debounce_seconds
-        self.machine = HoldKeyStateMachine(
-            hold_key,
-            cancel_key=cancel_key,
-            undo_key=undo_key,
-        )
-        self.cancel_key = cancel_key
-        self.undo_key = undo_key
+        self.machine = HoldKeyStateMachine(hold_key)
         self._process: subprocess.Popen[bytes] | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
