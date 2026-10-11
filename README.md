@@ -1,5 +1,7 @@
 # Talkies
 
+[![CI](https://github.com/hmishra2250/talkies/actions/workflows/ci.yml/badge.svg)](https://github.com/hmishra2250/talkies/actions/workflows/ci.yml)
+
 Talkies is a dictation tool for Linux. Hold a key, speak, and let go: Talkies transcribes what you
 said on your own computer with Whisper (through
 [`faster-whisper`](https://github.com/SYSTRAN/faster-whisper)) and pastes the text where your cursor
