@@ -1,9 +1,28 @@
 # Talkies
 
-Talkies is a private, local-first dictation and meeting transcription tool for Linux/X11. It
-captures audio with `ffmpeg`, transcribes locally with
-[`faster-whisper`](https://github.com/SYSTRAN/faster-whisper), stores history in SQLite, and pastes
-dictation into the focused X11 application without sending speech to a cloud service.
+Talkies is a dictation tool for Linux. Hold a key, speak, and let go: Talkies transcribes what you
+said on your own computer with Whisper (through
+[`faster-whisper`](https://github.com/SYSTRAN/faster-whisper)) and pastes the text where your cursor
+is. It can also record voice notes and meetings (your microphone plus whatever your speakers play)
+and save them as Markdown files. Audio and transcripts stay in your home directory, and after the
+speech model is downloaded once, nothing is sent over the network. A small dashboard on localhost
+lets you search your history, replay audio, correct transcripts, and measure how accurately
+different models hear your voice. Talkies runs on Ubuntu and Debian in an X11 session. It uses an
+NVIDIA GPU when one is available and the CPU otherwise.
+
+## Requirements
+
+- **An X11 session.** Talkies listens for the hold key with `xinput` and pastes with `xdotool`,
+  which only work under X11. Ubuntu's default GNOME session is Wayland on most machines; choose
+  **Ubuntu on Xorg** on the login screen. Wayland is not supported yet: there the hold key and
+  pasting do not work.
+- **Ubuntu or Debian with GNOME**, and PulseAudio or PipeWire for audio. The installer adds the other
+  system packages it needs with `apt`.
+- **Python 3.11 or newer.** The installer uses `uv`, which downloads a suitable Python if needed.
+- **About 1 GB of free memory** for the default `small.en` model.
+- **GPU (optional).** Talkies works on the CPU without any extra setup. To use an NVIDIA GPU you also
+  need the CUDA 12 libraries that `faster-whisper` uses (cuBLAS for CUDA 12 and cuDNN 9). The
+  installer does not add them. If they are missing, Talkies falls back to the CPU on its own.
 
 The main dictation flow is press-and-hold with a configurable key:
 
@@ -12,7 +31,7 @@ The main dictation flow is press-and-hold with a configurable key:
 2. Hold the selected key and speak; release it to transcribe and paste.
 3. Double-tap the selected key to lock recording hands-free, then tap it again to stop.
 
-Right Ctrl remains the default for existing installs, but some laptops have no physical Right Ctrl.
+Right Ctrl is the default, but some laptops have no physical Right Ctrl.
 The X11 key map alone cannot tell which keys are actually present. Detection observes a real key
 press and can capture a Copilot key even when it sends a key combination.
 
@@ -77,11 +96,13 @@ does not paste it. `talkies undo` restores the last cancelled dictation by pasti
 current target.
 
 Corrections are made in the dashboard: select a history item, edit the text, and save the
-correction. Corrected transcripts with retained audio can become benchmark pairs:
+correction.
 
 The dashboard's **Copy for paste** action puts saved text on the clipboard; paste it into the
 desired application. **Mark cancelled** and **Restore** change an item's history status. The
 `talkies undo` command directly pastes the most recent cancelled dictation into the focused app.
+
+Corrected transcripts with retained audio can become benchmark pairs:
 
 ```bash
 talkies export-benchmark ~/.local/share/talkies/benchmark/manifest.json
